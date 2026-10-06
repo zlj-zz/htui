@@ -1,6 +1,7 @@
 import { Box, Text, useInput } from 'ink';
 import { useEffect, useMemo, useState } from 'react';
 import { buildEntries, filterAndRank, viewport, type DisplayEntry } from '../rows';
+import { parseMouse, setMouse, WHEEL_DOWN, WHEEL_UP } from '../mouse';
 
 export interface KeyHint {
   /** Shown literally, e.g. `e`, `Ctrl-F`, `/`. */
@@ -84,8 +85,22 @@ export function SearchableList<T>({
     setCursor((c) => Math.min(Math.max(0, c), Math.max(0, filtered.length - 1)));
   }, [filtered.length]);
 
+  // Mouse reporting is on only while this list owns the keyboard; while
+  // filtering a TextInput is up and would take the raw bytes as text.
+  useEffect(() => {
+    if (!isActive || filtering) return;
+    setMouse(true);
+    return () => setMouse(false);
+  }, [isActive, filtering]);
+
   useInput(
     (input, key) => {
+      const mouse = parseMouse(input);
+      if (mouse) {
+        if (mouse.button === WHEEL_UP) setCursor((c) => Math.max(0, c - 1));
+        else if (mouse.button === WHEEL_DOWN) setCursor((c) => Math.min(filtered.length - 1, c + 1));
+        return;
+      }
       if (key.ctrl && input.length === 1) {
         onControl?.(input.toLowerCase(), selected);
         return;

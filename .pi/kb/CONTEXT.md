@@ -44,6 +44,7 @@ npm run typecheck && npm run build  # -> dist/cli.js
 - 键位语法：**vim 式两模式** —— 明文键 = 命令；`/` 进过滤（`Enter` 保留过滤、`Esc` 清空退出）；`Ctrl-F` = 跨文件搜索。
 - 身份用 **region 名**（行号会因编辑失效）。
 - 失败判定：`hasResponse`（有 statusCode）+ `testResults` 三值。
+- 鼠标：Ink 不建模鼠标，但 `parseKeypress` 把**未解析的转义序列**透传给 `useInput`（去掉前导 ESC）→ 滚轮 = `[<64;x;yM`。仅在**列表持有键盘时**开 `?1000h?1006h`（过滤态有 TextInput 会把原始字节当文本吞掉），退出还原。
 
 ## Top pitfalls
 - 生成文件里写 `@var` → env 永远失效（写死不写活）。
@@ -51,6 +52,7 @@ npm run typecheck && npm run build  # -> dist/cli.js
 - 空 `@var = ` → httpyac 视作未定义（`X is not defined`）；server url 相对/缺失要有**绝对占位 fallback**。
 - run-chain 用 `--all` → 输出是 N 个请求，**目标 = 切片最后一个**，别取 `requests[0]`。
 - 切片临时文件放**源目录 + 点号前缀**（否则被当成 collection，或破坏 env/config 解析）。
+- 开鼠标报告后终端**不再拖选文本**（需按 Shift / Terminal.app 的 Option）—— 鼠标能力的固有代价。
 - OSC52 大 payload 会被终端截断 → 已设上限并提示改用 `w`。
 
 ## Dependencies

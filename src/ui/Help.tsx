@@ -21,6 +21,7 @@ const SECTIONS: Array<{ title: string; keys: Array<[string, string]> }> = [
       ['s', 'switch environment'],
       ['r', 'run-chain (run prerequisites first)'],
       ['Ctrl-F', 'search requests across all files'],
+      ['wheel', 'scroll / move the selection'],
     ],
   },
   {

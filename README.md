@@ -33,6 +33,7 @@ Keys:
 | any list | `Esc` | clear filter, else go back |
 | any list | `e` | edit the highlighted request in `$EDITOR` |
 | requests | `h` | edit the request headers (add / edit / delete) |
+| any list | mouse wheel | move the selection (hold **Shift** to select text) |
 | any list | `i` | import an OpenAPI spec |
 | any list | `s` | switch environment |
 | requests | `r` | run-chain (prerequisites first) |
