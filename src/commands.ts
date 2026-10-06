@@ -3,29 +3,42 @@
  * so an agent can drive them.
  */
 import { createRequire } from 'node:module';
-import { rm } from 'node:fs/promises';
+import { readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
+import { runChain, type ChainEntry } from './chain';
 import { importOpenApi } from './import-openapi';
+import { parseRequests } from './parse';
+import { hasResponse, type HttpyacRequestResult } from './result';
+import { runRequest, selectRequest } from './run';
 import { collectionsDir, readIndex, sanitizeName, writeIndex } from './store';
 
 interface Flags {
   name?: string;
   baseUrl?: string;
+  env?: string;
+  line?: number;
   force: boolean;
   local: boolean;
+  chain: boolean;
+  json: boolean;
   positional: string[];
 }
 
 function parseFlags(args: string[]): Flags {
-  const flags: Flags = { force: false, local: false, positional: [] };
+  const flags: Flags = { force: false, local: false, chain: false, json: false, positional: [] };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === '--name' || arg === '-n') flags.name = args[++i];
     else if (arg === '--base-url') flags.baseUrl = args[++i];
+    else if (arg === '--env' || arg === '-e') flags.env = args[++i];
+    else if (arg === '--line' || arg === '-l') flags.line = Number(args[++i]);
     else if (arg.startsWith('--name=')) flags.name = arg.slice('--name='.length);
     else if (arg.startsWith('--base-url=')) flags.baseUrl = arg.slice('--base-url='.length);
+    else if (arg.startsWith('--env=')) flags.env = arg.slice('--env='.length);
     else if (arg === '--force' || arg === '-f') flags.force = true;
     else if (arg === '--local') flags.local = true;
+    else if (arg === '--chain') flags.chain = true;
+    else if (arg === '--json') flags.json = true;
     else flags.positional.push(arg);
   }
   return flags;
@@ -89,6 +102,87 @@ export async function removeCommand(args: string[]): Promise<number> {
   }
 }
 
+export async function sendCommand(args: string[]): Promise<number> {
+  const { name, line, chain, env, json, positional } = parseFlags(args);
+  const file = positional[0];
+  if (!file) {
+    process.stderr.write('usage: htui send <file.http> [--name N | --line N] [--chain] [-e ENV] [--json]\n');
+    return 2;
+  }
+
+  const filePath = path.resolve(file);
+  let content: string;
+  try {
+    content = await readFile(filePath, 'utf8');
+  } catch {
+    process.stderr.write(`htui send: cannot read ${file}\n`);
+    return 2;
+  }
+
+  const selected = selectRequest(parseRequests(content), { name, line });
+  if (!selected.req) {
+    process.stderr.write(`htui send: ${selected.error}\n`);
+    return 2;
+  }
+
+  const activeEnv = env ?? process.env.HTUI_ENV;
+  let target: HttpyacRequestResult | undefined;
+  let prerequisites: ChainEntry[] = [];
+  try {
+    if (chain) {
+      const outcome = await runChain({ file: filePath, content, target: selected.req, env: activeEnv });
+      target = outcome.target;
+      prerequisites = outcome.prerequisites;
+    } else {
+      target = await runRequest(filePath, selected.req, activeEnv);
+    }
+  } catch (err) {
+    process.stderr.write(`htui send: ${message(err)}\n`);
+    return 1;
+  }
+
+  const ok = hasResponse(target?.response) && !(target?.testResults ?? []).some((t) => t.status === 'ERROR');
+  process.stdout.write(
+    json
+      ? `${JSON.stringify({ ok, target: brief(target), prerequisites }, null, 2)}\n`
+      : `${human(target, prerequisites)}\n`,
+  );
+  return ok ? 0 : 1;
+}
+
+function brief(target?: HttpyacRequestResult): Record<string, unknown> | null {
+  if (!target) return null;
+  return {
+    name: target.name,
+    statusCode: target.response?.statusCode,
+    statusMessage: target.response?.statusMessage,
+    duration: target.duration,
+    body: target.response?.body,
+    tests: target.testResults,
+  };
+}
+
+function human(target: HttpyacRequestResult | undefined, prerequisites: ChainEntry[]): string {
+  const lines: string[] = [];
+  for (const p of prerequisites) {
+    const status = p.statusCode != null ? ` ${p.statusCode}` : '';
+    lines.push(`${p.ok ? '✓' : '✗'} ${p.name}${status}${p.message ? ` — ${p.message}` : ''}`);
+  }
+  if (!target) {
+    lines.push('✗ request did not run');
+    return lines.join('\n');
+  }
+  const r = target.response;
+  const timing = target.duration != null ? ` · ${Math.round(target.duration)}ms` : '';
+  lines.push(`${r?.statusCode ?? '?'} ${r?.statusMessage ?? ''}${timing}`.trim());
+  const body = typeof r?.body === 'string' ? r.body : r?.body != null ? JSON.stringify(r.body, null, 2) : '';
+  if (body) lines.push(body);
+  for (const t of target.testResults ?? []) {
+    lines.push(`${t.status === 'SUCCESS' ? '✓' : '✗'} ${t.message ?? ''}`);
+  }
+  return lines.join('\n');
+}
+
 export function printHelp(): void {
   process.stdout.write(
     [
@@ -99,6 +193,7 @@ export function printHelp(): void {
       '  htui import <spec.json> [options]       import OpenAPI 3.x as a collection',
       '  htui list [--local]                     list imported collections',
       '  htui remove <name> [--local]            delete a collection',
+      '  htui send <file.http> [options]         send a request (headless)',
       '  htui --help | --version',
       '',
       'import options:',
@@ -106,6 +201,12 @@ export function printHelp(): void {
       '  --force         overwrite an existing collection',
       '  --local         store in ./.htui/collections instead of ~/.config/htui',
       '  --base-url URL  override the server URL',
+      '',
+      'send options:',
+      '  --name N | --line N  pick the request (needed if the file has several)',
+      '  --chain              run prerequisite requests first',
+      '  -e, --env E          httpyac environment',
+      '  --json               machine-readable output',
       '',
       'note: YAML specs are not supported (JSON only); Swagger 2.0 is converted to OpenAPI 3.',
     ].join('\n') + '\n',

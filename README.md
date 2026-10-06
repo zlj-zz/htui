@@ -55,6 +55,18 @@ are self-contained (`@baseUrl`, `@token`, … in-file), so they do not depend on
 project's httpyac config. Limits: **YAML is not supported** (JSON only); external
 (cross-file) `$ref` is not resolved. Swagger 2.0 is converted to OpenAPI 3 on import.
 
+## Headless (agents)
+
+```bash
+htui send api/users.http -n listUsers        # one request
+htui send api/users.http -n getMe --chain     # run prerequisite requests first (login -> token/cookie)
+htui send api/users.http --line 12 --json     # machine-readable
+```
+
+Exit codes: `0` completed · `1` failed · `2` usage/selection error. `--chain`
+slices the file up to the target region and runs it with `--all`, so session
+state from earlier requests (cookie, token) is available.
+
 ## Dev
 
 ```bash

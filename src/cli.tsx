@@ -3,49 +3,17 @@ import { Box, Text, render, useApp, useInput } from 'ink';
 import { Spinner } from '@inkjs/ui';
 import { useEffect, useState } from 'react';
 import { readFile } from 'node:fs/promises';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import path from 'node:path';
 import { parseRequests, type HttpRequest } from './parse';
 import { hasResponse, testIcon, type HttpyacRequestResult, type TestResult } from './result';
 import { runChain, type ChainEntry } from './chain';
+import { runRequest } from './run';
 import { buildWorkspace, listFiles, type IndexedRequest, type ScannedFile } from './workspace';
-import { importCommand, listCommand, printHelp, printVersion, removeCommand } from './commands';
+import { importCommand, listCommand, printHelp, printVersion, removeCommand, sendCommand } from './commands';
 import { SearchableList } from './ui/SearchableList';
 import { ImportForm } from './ui/ImportForm';
 
-const execFileAsync = promisify(execFile);
 const MAX_BODY_LINES = 200;
-
-/** Delegate execution to httpyac and read its documented JSON contract. */
-async function runHttpyac(file: string, req: HttpRequest): Promise<HttpyacRequestResult> {
-  // httpyac rejects paths outside its cwd, so pass a relative path and, when
-  // the file lives elsewhere, run from the file's own directory.
-  const rel = path.relative(process.cwd(), file);
-  const insideCwd = rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
-  const args = ['send', insideCwd ? rel : path.basename(file), '--line', String(req.line), '--json', '--no-color'];
-  if (process.env.HTUI_ENV) args.push('-e', process.env.HTUI_ENV);
-  const options = {
-    encoding: 'utf8' as const,
-    maxBuffer: 32 * 1024 * 1024,
-    cwd: insideCwd ? process.cwd() : path.dirname(file),
-  };
-
-  let stdout: string;
-  try {
-    ({ stdout } = await execFileAsync('httpyac', args, options));
-  } catch (err: unknown) {
-    // httpyac exits non-zero on failed tests but still prints the JSON result.
-    const e = err as { stdout?: string; stderr?: string; message?: string };
-    if (e.stdout?.trim()) stdout = e.stdout;
-    else throw new Error(e.stderr || e.message || String(err));
-  }
-
-  const parsed = JSON.parse(stdout);
-  const first = Array.isArray(parsed.requests) ? parsed.requests[0] : undefined;
-  if (!first) throw new Error('httpyac returned no requests');
-  return first;
-}
 
 function statusColor(code?: number): string | undefined {
   if (code == null) return undefined;
@@ -174,7 +142,7 @@ function App({ initialFile }: { initialFile?: string }) {
         setPrereqs(outcome.prerequisites);
         setResult(outcome.target ?? null);
       } else {
-        setResult(await runHttpyac(target.file, target.req));
+        setResult(await runRequest(target.file, target.req, process.env.HTUI_ENV));
       }
       setStep('result');
     } catch (err: unknown) {
@@ -382,6 +350,9 @@ switch (command) {
     break;
   case 'remove':
     process.exitCode = await removeCommand(args);
+    break;
+  case 'send':
+    process.exitCode = await sendCommand(args);
     break;
   case 'help':
   case '--help':
