@@ -169,6 +169,16 @@ function App({ initialFile }: { initialFile?: string }) {
     setRefresh((n) => n + 1); // re-read the file after editing
   }
 
+  async function editEnv(envPath: string) {
+    try {
+      await suspendTerminal(() => openEditor(envPath, 1));
+    } catch (err: unknown) {
+      fail(err instanceof Error ? err.message : String(err));
+      return;
+    }
+    setRefresh((n) => n + 1);
+  }
+
   async function openSearch(from: 'file' | 'request') {
     setSearchFrom(from);
     setStep('search');
@@ -204,6 +214,9 @@ function App({ initialFile }: { initialFile?: string }) {
       }
       if (input === 'r' && step === 'result' && picked) void send(picked, origin);
       if (input === 'e' && step === 'result' && picked) void edit(picked.file, picked.req.line);
+      if (input === 'v' && step === 'result' && picked) {
+        void editEnv(path.join(path.dirname(picked.file), 'http-client.env.json'));
+      }
       if (key.ctrl && input === 'r' && picked) void send(picked, origin, { chain: true });
     },
     { isActive: step === 'result' || step === 'error' },
@@ -247,6 +260,10 @@ function App({ initialFile }: { initialFile?: string }) {
           setActiveEnv(n);
           setStep(envReturn);
         }}
+        onControl={(key) => {
+          if (key === 'v') void editEnv(envFile);
+        }}
+        controls={[{ key: 'v', label: 'edit file' }]}
         onBack={() => setStep(envReturn)}
       />
     );
@@ -387,7 +404,7 @@ function App({ initialFile }: { initialFile?: string }) {
       ) : null}
 
       <Box marginTop={1}>
-        <Text dimColor>[r] rerun [e] edit [Ctrl-R] chain [b] back [q] quit</Text>
+        <Text dimColor>[r] rerun [e] edit [v] vars [Ctrl-R] chain [b] back [q] quit</Text>
       </Box>
     </Box>
   );
