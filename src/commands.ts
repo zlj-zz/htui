@@ -8,7 +8,7 @@ import path from 'node:path';
 import { runChain, type ChainEntry } from './chain';
 import { importOpenApi } from './import-openapi';
 import { parseRequests } from './parse';
-import { hasResponse, type HttpyacRequestResult } from './result';
+import { isOk, type HttpyacRequestResult } from './result';
 import { runRequest, selectRequest } from './run';
 import { collectionDir, collectionsDir, readIndex, sanitizeName, writeIndex } from './store';
 
@@ -21,6 +21,8 @@ interface Flags {
   local: boolean;
   chain: boolean;
   json: boolean;
+  /** Set on a bad option; commands report it and exit 2. */
+  error?: string;
   positional: string[];
 }
 
@@ -31,21 +33,30 @@ function parseFlags(args: string[]): Flags {
     if (arg === '--name' || arg === '-n') flags.name = args[++i];
     else if (arg === '--base-url') flags.baseUrl = args[++i];
     else if (arg === '--env' || arg === '-e') flags.env = args[++i];
-    else if (arg === '--line' || arg === '-l') flags.line = Number(args[++i]);
-    else if (arg.startsWith('--name=')) flags.name = arg.slice('--name='.length);
+    else if (arg === '--line' || arg === '-l') {
+      const n = Number(args[++i]);
+      if (!Number.isInteger(n) || n < 1) flags.error ??= '--line requires a positive integer';
+      else flags.line = n;
+    } else if (arg.startsWith('--name=')) flags.name = arg.slice('--name='.length);
     else if (arg.startsWith('--base-url=')) flags.baseUrl = arg.slice('--base-url='.length);
     else if (arg.startsWith('--env=')) flags.env = arg.slice('--env='.length);
     else if (arg === '--force' || arg === '-f') flags.force = true;
     else if (arg === '--local') flags.local = true;
     else if (arg === '--chain') flags.chain = true;
     else if (arg === '--json') flags.json = true;
+    else if (arg.startsWith('-') && arg !== '-') flags.error ??= `unknown option: ${arg}`;
     else flags.positional.push(arg);
   }
   return flags;
 }
 
 export async function importCommand(args: string[]): Promise<number> {
-  const { name, baseUrl, force, local, positional } = parseFlags(args);
+  const flags = parseFlags(args);
+  if (flags.error) {
+    process.stderr.write(`htui import: ${flags.error}\n`);
+    return 2;
+  }
+  const { name, baseUrl, force, local, positional } = flags;
   const spec = positional[0];
   if (!spec) {
     process.stderr.write('usage: htui import <spec.json> [--name N] [--force] [--local] [--base-url URL]\n');
@@ -64,7 +75,12 @@ export async function importCommand(args: string[]): Promise<number> {
 }
 
 export async function listCommand(args: string[]): Promise<number> {
-  const { local } = parseFlags(args);
+  const flags = parseFlags(args);
+  if (flags.error) {
+    process.stderr.write(`htui list: ${flags.error}\n`);
+    return 2;
+  }
+  const { local } = flags;
   const index = await readIndex(local);
   const names = Object.keys(index).sort();
   if (names.length === 0) {
@@ -79,7 +95,12 @@ export async function listCommand(args: string[]): Promise<number> {
 }
 
 export async function removeCommand(args: string[]): Promise<number> {
-  const { local, positional } = parseFlags(args);
+  const flags = parseFlags(args);
+  if (flags.error) {
+    process.stderr.write(`htui remove: ${flags.error}\n`);
+    return 2;
+  }
+  const { local, positional } = flags;
   const raw = positional[0];
   if (!raw) {
     process.stderr.write('usage: htui remove <name> [--local]\n');
@@ -105,7 +126,12 @@ export async function removeCommand(args: string[]): Promise<number> {
 }
 
 export async function sendCommand(args: string[]): Promise<number> {
-  const { name, line, chain, env, json, positional } = parseFlags(args);
+  const flags = parseFlags(args);
+  if (flags.error) {
+    process.stderr.write(`htui send: ${flags.error}\n`);
+    return 2;
+  }
+  const { name, line, chain, env, json, positional } = flags;
   const file = positional[0];
   if (!file) {
     process.stderr.write('usage: htui send <file.http> [--name N | --line N] [--chain] [-e ENV] [--json]\n');
@@ -143,7 +169,7 @@ export async function sendCommand(args: string[]): Promise<number> {
     return 1;
   }
 
-  const ok = hasResponse(target?.response) && !(target?.testResults ?? []).some((t) => t.status === 'ERROR');
+  const ok = isOk(target);
   process.stdout.write(
     json
       ? `${JSON.stringify({ ok, target: brief(target), prerequisites }, null, 2)}\n`

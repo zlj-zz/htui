@@ -6,7 +6,7 @@ import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import type { HttpRequest } from './parse';
-import type { HttpyacRequestResult } from './result';
+import { parseSendOutput, type HttpyacRequestResult } from './result';
 
 const execFileAsync = promisify(execFile);
 
@@ -29,9 +29,10 @@ export async function runRequest(
   const args = ['send', arg, '--line', String(req.startLine), '--json', '--no-color'];
   if (env) args.push('-e', env);
 
-  let stdout: string;
+  let stdout = '';
+  let stderr = '';
   try {
-    ({ stdout } = await execFileAsync('httpyac', args, {
+    ({ stdout, stderr } = await execFileAsync('httpyac', args, {
       encoding: 'utf8',
       maxBuffer: 32 * 1024 * 1024,
       cwd,
@@ -39,12 +40,18 @@ export async function runRequest(
   } catch (err: unknown) {
     // httpyac exits non-zero on failed tests but still prints the JSON result.
     const e = err as { stdout?: string; stderr?: string; message?: string };
-    if (e.stdout?.trim()) stdout = e.stdout;
-    else throw new Error(e.stderr || e.message || String(err));
+    if (e.stdout?.trim()) {
+      stdout = e.stdout;
+      stderr = e.stderr ?? '';
+    } else {
+      throw new Error(e.stderr || e.message || String(err));
+    }
   }
 
-  const first = (JSON.parse(stdout) as { requests?: HttpyacRequestResult[] }).requests?.[0];
+  const first = parseSendOutput(stdout)[0];
   if (!first) throw new Error('httpyac returned no requests');
+  // A request with no response gives us only stderr as the failure channel.
+  if (!first.response && stderr.trim()) first.stderr = stderr.trim();
   return first;
 }
 

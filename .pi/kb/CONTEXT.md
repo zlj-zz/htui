@@ -38,7 +38,7 @@ npm run typecheck && npm run build  # -> dist/cli.js
 - `testResults[].status` 是**字符串** `SUCCESS | ERROR | SKIPPED`（不是布尔）。
 
 ## 架构定案
-- **零运行时依赖**（唯一外部依赖是全局 `httpyac`）。
+- **除 httpyac 外不自带引擎依赖**（TUI 用 `ink`/`react`/`@inkjs/ui`，协议与执行全交给全局 `httpyac`）。
 - **生成物 ≠ 手工物**：`collections/<name>/{<name>.http（可重导）, http-client.env.json（write-once）, <name>.local.http（永不覆盖）}`。
 - 编辑器交接用 Ink 官方 **`suspendTerminal()`**（非手工 raw-mode）。
 - 键位语法：**vim 式两模式** —— 明文键 = 命令；`/` 进过滤（`Enter` 保留过滤、`Esc` 清空退出）；`Ctrl-F` = 跨文件搜索。

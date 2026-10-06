@@ -45,25 +45,32 @@ export interface ScannedFile {
   kind?: 'generated' | 'local';
 }
 
-/** Project files under `root`, plus imported collections (outside `root`). */
-export async function listFiles(root: string, local = false): Promise<ScannedFile[]> {
+/** Project files under `root`, plus imported collections (user-level and project-local). */
+export async function listFiles(root: string): Promise<ScannedFile[]> {
   const project = (await findHttpFiles(root)).map(
     (file): ScannedFile => ({ file, relPath: path.relative(root, file), source: 'project' }),
   );
 
-  const dir = collectionsDir(local);
-  const collections = (await findHttpFiles(dir))
-    .filter((file) => path.dirname(file) !== dir) // legacy flat files are obsolete
-    .map((file): ScannedFile => {
-    // <name>/<name>.http is generated; anything else in the collection dir is hand-owned.
-    const generated = path.basename(file) === `${path.basename(path.dirname(file))}.http`;
-    return {
-      file,
-      relPath: path.relative(dir, file),
-      source: 'collection',
-      kind: generated ? 'generated' : 'local',
-    };
-  });
+  // Both `~/.config/htui/collections` and `<root>/.htui/collections` (--local).
+  const dirs = [collectionsDir(false), collectionsDir(true)];
+  const collections = (
+    await Promise.all(
+      dirs.map(async (dir) =>
+        (await findHttpFiles(dir))
+          .filter((file) => path.dirname(file) !== dir) // legacy flat files are obsolete
+          .map((file): ScannedFile => {
+            // <name>/<name>.http is generated; anything else in the dir is hand-owned.
+            const generated = path.basename(file) === `${path.basename(path.dirname(file))}.http`;
+            return {
+              file,
+              relPath: path.relative(dir, file),
+              source: 'collection',
+              kind: generated ? 'generated' : 'local',
+            };
+          }),
+      ),
+    )
+  ).flat();
 
   return [...project, ...collections];
 }
@@ -76,8 +83,8 @@ export interface IndexedRequest extends HttpRequest {
 }
 
 /** Parse every .http/.rest under `root` AND the collection store. */
-export async function buildWorkspace(root: string, local = false): Promise<IndexedRequest[]> {
-  const files = await listFiles(root, local);
+export async function buildWorkspace(root: string): Promise<IndexedRequest[]> {
+  const files = await listFiles(root);
   const perFile = await Promise.all(
     files.map(async ({ file, relPath, source }): Promise<IndexedRequest[]> => {
       try {

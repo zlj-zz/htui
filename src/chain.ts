@@ -12,7 +12,7 @@ import { rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import type { HttpRequest } from './parse';
-import { hasResponse, type HttpyacRequestResult } from './result';
+import { isOk, parseSendOutput, type HttpyacRequestResult } from './result';
 
 const execFileAsync = promisify(execFile);
 
@@ -38,15 +38,12 @@ export function summarizeChain(requests: HttpyacRequestResult[]): {
 } {
   if (requests.length === 0) return { prerequisites: [] };
   const target = requests[requests.length - 1];
-  const prerequisites = requests.slice(0, -1).map((r) => {
-    const code = r.response?.statusCode;
-    return {
-      name: r.name ?? 'request',
-      ok: hasResponse(r.response) && (code ?? 0) < 400,
-      statusCode: code,
-      message: (r.testResults ?? []).find((t) => t.status === 'ERROR')?.message,
-    };
-  });
+  const prerequisites = requests.slice(0, -1).map((r) => ({
+    name: r.name ?? 'request',
+    ok: isOk(r),
+    statusCode: r.response?.statusCode,
+    message: (r.testResults ?? []).find((t) => t.status === 'ERROR')?.message,
+  }));
   return { target, prerequisites };
 }
 
@@ -72,9 +69,10 @@ export async function runChain(opts: {
 
   try {
     await writeFile(tempPath, sliceUpTo(opts.content, opts.target), 'utf8');
-    let stdout: string;
+    let stdout = '';
+    let stderr = '';
     try {
-      ({ stdout } = await execFileAsync('httpyac', args, {
+      ({ stdout, stderr } = await execFileAsync('httpyac', args, {
         encoding: 'utf8',
         maxBuffer: 32 * 1024 * 1024,
         cwd: dir,
@@ -82,11 +80,16 @@ export async function runChain(opts: {
     } catch (err: unknown) {
       // httpyac exits non-zero on failure but still prints the JSON result.
       const e = err as { stdout?: string; stderr?: string; message?: string };
-      if (e.stdout?.trim()) stdout = e.stdout;
-      else throw new Error(e.stderr || e.message || String(err));
+      if (e.stdout?.trim()) {
+        stdout = e.stdout;
+        stderr = e.stderr ?? '';
+      } else {
+        throw new Error(e.stderr || e.message || String(err));
+      }
     }
-    const parsed = JSON.parse(stdout) as { requests?: HttpyacRequestResult[] };
-    return summarizeChain(parsed.requests ?? []);
+    const outcome = summarizeChain(parseSendOutput(stdout));
+    if (outcome.target && !outcome.target.response && stderr.trim()) outcome.target.stderr = stderr.trim();
+    return outcome;
   } finally {
     await rm(tempPath, { force: true });
   }

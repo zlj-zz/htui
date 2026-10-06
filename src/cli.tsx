@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 import { Box, Text, render, useApp, useInput } from 'ink';
 import { Spinner } from '@inkjs/ui';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { parseRequests, type HttpRequest } from './parse';
-import { hasResponse, testIcon, type HttpyacRequestResult, type TestResult } from './result';
+import { hasResponse, isOk, testIcon, type HttpyacRequestResult, type TestResult } from './result';
 import { runChain, type ChainEntry } from './chain';
 import { runRequest } from './run';
 import { buildWorkspace, listFiles, type IndexedRequest, type ScannedFile } from './workspace';
@@ -118,7 +118,8 @@ function App({ initialFile }: { initialFile?: string }) {
     setStep('error');
   }
 
-  // initial scan
+  // initial scan (re-runs on refresh, but auto-selects a file only once)
+  const didInit = useRef(false);
   useEffect(() => {
     listFiles(process.cwd())
       .then((found) => {
@@ -127,6 +128,8 @@ function App({ initialFile }: { initialFile?: string }) {
           return;
         }
         setFiles(found);
+        if (didInit.current) return;
+        didInit.current = true;
         if (initialFile) {
           setFile(path.resolve(initialFile));
           setStep('request');
@@ -154,8 +157,13 @@ function App({ initialFile }: { initialFile?: string }) {
       .catch((err: unknown) => fail(err instanceof Error ? err.message : String(err)));
   }, [file, refresh]);
 
+  // the cross-file index must not outlive an edit or an import
+  useEffect(() => {
+    setWorkspace(null);
+  }, [refresh]);
+
   function record(target: Picked, res: HttpyacRequestResult | null) {
-    const ok = hasResponse(res?.response) && !(res?.testResults ?? []).some((t) => t.status === 'ERROR');
+    const ok = isOk(res);
     const entry: HistoryEntry = {
       picked: target,
       method: target.req.method,
@@ -229,7 +237,7 @@ function App({ initialFile }: { initialFile?: string }) {
   async function saveBody(result: HttpyacRequestResult) {
     const target = path.join(os.tmpdir(), `htui-body-${Date.now()}.json`);
     try {
-      await writeFile(target, rawBody(result), 'utf8');
+      await writeFile(target, rawBody(result), { encoding: 'utf8', mode: 0o600 });
       setNotice(`saved ${target}`);
     } catch (err: unknown) {
       setNotice(`save failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -298,7 +306,7 @@ function App({ initialFile }: { initialFile?: string }) {
           body: typeof sent?.body === 'string' ? sent.body : undefined,
         });
         const r = copyToTerminal(curl);
-        setNotice(r.ok ? 'copied curl' : 'command too large for the clipboard');
+        setNotice(r.ok ? 'copied curl (may contain credentials)' : 'command too large for the clipboard');
       }
       if (input === 'w' && step === 'result' && result) void saveBody(result);
       if (input === '?') openHelp(step);
@@ -345,6 +353,7 @@ function App({ initialFile }: { initialFile?: string }) {
       <SearchableList
         header={`History (${history.length})  ·  env:${activeEnv}`}
         onHelp={() => openHelp('history')}
+        onQuit={exit}
         placeholder="filter history…"
         items={history}
         keyOf={(e) => `${e.method} ${e.url} ${e.name}`}
@@ -362,6 +371,7 @@ function App({ initialFile }: { initialFile?: string }) {
       <SearchableList
         header={`Environment · ${relOf(envFile)}  (current: ${activeEnv})`}
         onHelp={() => openHelp('env')}
+        onQuit={exit}
         placeholder="filter environments…"
         items={envNames}
         keyOf={(n) => n}
@@ -385,6 +395,7 @@ function App({ initialFile }: { initialFile?: string }) {
       <SearchableList
         header={`Select a file — ${process.cwd()}  ·  env:${activeEnv}`}
         onHelp={() => openHelp('file')}
+        onQuit={exit}
         placeholder="filter files…"
         items={files}
         keyOf={(f) => `${f.source} ${f.relPath}`}
@@ -420,6 +431,7 @@ function App({ initialFile }: { initialFile?: string }) {
       <SearchableList
         header={`${relOf(file)}  ·  env:${activeEnv}`}
         onHelp={() => openHelp('request')}
+        onQuit={exit}
         placeholder="filter requests…"
         items={requests}
         keyOf={(r) => `${r.method} ${r.url} ${r.name}`}
@@ -453,6 +465,7 @@ function App({ initialFile }: { initialFile?: string }) {
       <SearchableList
         header={`Search all requests  ·  env:${activeEnv}`}
         onHelp={() => openHelp('search')}
+        onQuit={exit}
         placeholder="search method / url / name / path…"
         items={workspace}
         keyOf={(r) => `${r.method} ${r.url} ${r.name} ${r.relPath}`}
@@ -512,8 +525,9 @@ function App({ initialFile }: { initialFile?: string }) {
         </>
       ) : (
         <Box marginTop={1} flexDirection="column">
+          {result?.stderr ? <Text color="red">{clipBody(result.stderr)}</Text> : null}
           {tests.length === 0 ? (
-            <Text color="red">no response</Text>
+            result?.stderr ? null : <Text color="red">no response</Text>
           ) : (
             tests.map((t, i) => <TestLine key={i} test={t} />)
           )}

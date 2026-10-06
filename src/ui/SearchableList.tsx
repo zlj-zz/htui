@@ -27,6 +27,8 @@ export interface SearchableListProps<T> {
   onControl?: (key: string, item: T | undefined) => void;
   /** `?` in normal mode. */
   onHelp?: () => void;
+  /** `q` in normal mode — quit. */
+  onQuit?: () => void;
   /** Footer hints (display only). */
   controls?: KeyHint[];
 }
@@ -63,6 +65,7 @@ export function SearchableList<T>({
   onCommand,
   onControl,
   onHelp,
+  onQuit,
   controls,
 }: SearchableListProps<T>) {
   const [query, setQuery] = useState('');
@@ -109,6 +112,7 @@ export function SearchableList<T>({
         else onBack?.();
       } else if (input === '/') setFiltering(true);
       else if (input === '?') onHelp?.();
+      else if (input === 'q') onQuit?.();
       else if (input.length === 1) onCommand?.(input, selected);
     },
     { isActive },

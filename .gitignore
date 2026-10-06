@@ -3,4 +3,5 @@ dist
 *.log
 .DS_Store
 
-.pikb/.lore-session-log.jsonl
+.pikb/
+.pi/

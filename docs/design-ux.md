@@ -241,7 +241,7 @@ spec 选择器（复用 `SearchableList` 列 `*.json/*.yaml`）→ 命名 → �
 - **只有 `crm-api.http` 可被 `import --force` 覆盖。**
 - `http-client.env.json`：**write-once**；重导时只**合并新 key**（不覆盖已有值；缺 key 补占位），并在 stdout 报告「合并了 N 个变量」。
 - `crm-api.local.http`：**永不触碰**。
-- `index.json` 记录生成物 hash / 端点计数，供重导对账。
+- `index.json` 记录来源 / 导入时间 / 端点计数。
 
 ### 6.4 导入产物
 1. `<name>/<name>.http`（结构）
@@ -347,7 +347,7 @@ spec 选择器（复用 `SearchableList` 列 `*.json/*.yaml`）→ 命名 → �
 
 ## 12. 状态与待办
 
-**已实现**：S1 · S2（含 Ctrl-E）· S2.5 · S3（`e`/`v`/`t`）· S4（`y`/`Y`/`w`/`h`）· S5（`?` 帮助）。
+**已实现**：S1 · S2（含环境选择器 `s`）· S2.5 · S3（`e`/`v`/`t`）· S4（`y`/`Y`/`w`/`h`）· S5（`?` 帮助）。
 `htui send`（headless run-chain）已实现；`--name` 语义已定。
 
 **未决 / 待办**（按建议顺序）：

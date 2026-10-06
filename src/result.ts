@@ -31,6 +31,8 @@ export interface HttpyacRequestResult {
   response?: HttpyacResponse;
   duration?: number;
   testResults?: TestResult[];
+  /** httpyac's stderr, attached when the request produced no response. */
+  stderr?: string;
 }
 
 /** A completed request is one whose response actually carries a status code. */
@@ -38,8 +40,25 @@ export function hasResponse(response: { statusCode?: number } | null | undefined
   return typeof response?.statusCode === 'number';
 }
 
+/** The single definition of "ok": completed, non-error status, no failing test. */
+export function isOk(result: HttpyacRequestResult | null | undefined): boolean {
+  const code = result?.response?.statusCode;
+  return (
+    hasResponse(result?.response) && (code ?? 0) < 400 && !(result?.testResults ?? []).some((t) => t.status === 'ERROR')
+  );
+}
+
 export function testIcon(status: TestResult['status']): { icon: string; color: string } {
   if (status === 'SUCCESS') return { icon: '✓', color: 'green' };
   if (status === 'SKIPPED') return { icon: '·', color: 'yellow' };
   return { icon: '✗', color: 'red' }; // ERROR or unknown
+}
+
+/** Parse httpyac's `--json` output; a parse failure usually means truncation. */
+export function parseSendOutput(stdout: string): HttpyacRequestResult[] {
+  try {
+    return (JSON.parse(stdout) as { requests?: HttpyacRequestResult[] }).requests ?? [];
+  } catch {
+    throw new Error('httpyac output was not valid JSON (it may have been truncated at 32 MB)');
+  }
 }

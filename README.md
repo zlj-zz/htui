@@ -52,11 +52,15 @@ htui remove petstore
 Options: `--name N` (default: spec title) · `--force` (overwrite) · `--local`
 (`./.htui/collections` instead of `~/.config/htui`) · `--base-url URL`.
 
-Collections live in `$HTUI_HOME/collections` (`~/.config/htui` by default), with a
-sidecar `index.json` recording source / import time / endpoint count. Generated files
-are self-contained (`@baseUrl`, `@token`, … in-file), so they do not depend on the
-project's httpyac config. Limits: **YAML is not supported** (JSON only); external
-(cross-file) `$ref` is not resolved. Swagger 2.0 is converted to OpenAPI 3 on import.
+Each collection is a directory under `$HTUI_HOME/collections` (`~/.config/htui` by
+default, or `./.htui/collections` with `--local`): `<name>/<name>.http` (generated
+requests — safe to re-import) and `<name>/http-client.env.json` (the variables and
+environments; a re-import only fills in **missing** keys, never overwrites your
+edits). The generated file contains no variables — it references `{{baseUrl}}`,
+`{{token}}`, … and resolves them from the env file, so you can retarget it per
+environment (`s` in the TUI, or `-e`). Limits: **YAML is not supported** (JSON
+only); external (cross-file) `$ref` is not resolved; Swagger 2.0 is converted on
+import.
 
 ## Headless (agents)
 
