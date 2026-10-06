@@ -1,0 +1,41 @@
+{
+  "name": "htui",
+  "version": "0.1.0",
+  "description": "A terminal UI for httpyac — send HTTP/gRPC/WebSocket requests from your terminal",
+  "type": "module",
+  "bin": {
+    "htui": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "dev": "tsx src/cli.tsx",
+    "build": "tsup src/cli.tsx --format esm --clean && chmod +x dist/cli.js",
+    "start": "node dist/cli.js",
+    "typecheck": "tsc --noEmit",
+    "check": "tsx src/parse.selfcheck.ts"
+  },
+  "keywords": [
+    "httpyac",
+    "tui",
+    "http",
+    "grpc",
+    "api-client",
+    "terminal",
+    "ink"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@inkjs/ui": "^2.0.0",
+    "ink": "^8.0.0",
+    "react": "^19.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "@types/react": "^19.3.0",
+    "tsup": "^8.5.1",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}

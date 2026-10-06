@@ -1,0 +1,17 @@
+@host = https://jsonplaceholder.typicode.com
+
+### list posts
+GET {{host}}/posts?_limit=3
+
+### get post 1
+GET {{host}}/posts/1
+
+### create post
+POST {{host}}/posts
+Content-Type: application/json
+
+{
+  "title": "hello",
+  "body": "from htui",
+  "userId": 1
+}
