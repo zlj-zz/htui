@@ -2,6 +2,12 @@ import { Box, Text, useInput } from 'ink';
 import { useEffect, useMemo, useState } from 'react';
 import { buildEntries, filterAndRank, viewport, type DisplayEntry } from '../rows';
 
+export interface ControlHint {
+  /** Lowercase letter, triggered as Ctrl-<key>. */
+  key: string;
+  label: string;
+}
+
 export interface SearchableListProps<T> {
   items: T[];
   keyOf: (t: T) => string;
@@ -15,12 +21,10 @@ export interface SearchableListProps<T> {
   onSelect: (t: T) => void;
   /** Esc with an empty query. */
   onBack?: () => void;
-  /** Ctrl-F — reserved so it never lands in the filter. */
-  onSearchKey?: () => void;
-  /** Ctrl-O — reserved import entry. */
-  onImportKey?: () => void;
-  /** Ctrl-R — run-chain entry; receives the highlighted item. */
-  onChainKey?: (t: T) => void;
+  /** Reserved Ctrl-<key> actions (they never land in the filter). */
+  onControl?: (key: string, item: T | undefined) => void;
+  /** Footer hints for the reserved keys (display only). */
+  controls?: ControlHint[];
 }
 
 function Row<T>({ entry, selected, hint }: { entry: DisplayEntry<T>; selected: boolean; hint?: string }) {
@@ -51,9 +55,8 @@ export function SearchableList<T>({
   isActive = true,
   onSelect,
   onBack,
-  onSearchKey,
-  onImportKey,
-  onChainKey,
+  onControl,
+  controls,
 }: SearchableListProps<T>) {
   const [query, setQuery] = useState('');
   const [cursor, setCursor] = useState(0);
@@ -62,8 +65,7 @@ export function SearchableList<T>({
   const size = Math.max(1, maxVisible ?? Math.max(1, (process.stdout.rows ?? 24) - 6));
   const { start, end } = viewport(filtered.length, cursor, size);
   const visible = filtered.slice(start, end);
-  const showGroups = !query.trim();
-  const entries = buildEntries(visible, { labelOf, groupOf, showGroups });
+  const entries = buildEntries(visible, { labelOf, groupOf, showGroups: !query.trim() });
   const selected = filtered[cursor];
 
   useEffect(() => setCursor(0), [query]);
@@ -90,16 +92,8 @@ export function SearchableList<T>({
         else onBack?.();
         return;
       }
-      if (key.ctrl && input === 'f') {
-        onSearchKey?.();
-        return;
-      }
-      if (key.ctrl && input === 'o') {
-        onImportKey?.();
-        return;
-      }
-      if (key.ctrl && input === 'r') {
-        if (selected) onChainKey?.(selected);
+      if (key.ctrl && input.length === 1) {
+        onControl?.(input.toLowerCase(), selected); // reserved; never filtered
         return;
       }
       if (key.ctrl || key.meta) return;
@@ -127,21 +121,14 @@ export function SearchableList<T>({
             {entry.label}
           </Text>
         ) : (
-          <Row
-            key={`i${i}`}
-            entry={entry}
-            selected={entry.item === selected}
-            hint={hintOf?.(entry.item as T)}
-          />
+          <Row key={`i${i}`} entry={entry} selected={entry.item === selected} hint={hintOf?.(entry.item as T)} />
         ),
       )}
       <Text dimColor>
         {filtered.length === items.length ? `${items.length}` : `${filtered.length}/${items.length}`}
         {start > 0 ? ' ↑' : ''}
         {end < filtered.length ? ' ↓' : ''}
-        {onSearchKey ? '   [Ctrl-F] search all' : ''}
-        {onImportKey ? '   [Ctrl-O] import' : ''}
-        {onChainKey ? '   [Ctrl-R] chain' : ''}
+        {controls?.map((c) => `   [Ctrl-${c.key.toUpperCase()}] ${c.label}`).join('')}
       </Text>
     </Box>
   );

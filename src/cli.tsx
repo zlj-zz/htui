@@ -9,6 +9,7 @@ import { hasResponse, testIcon, type HttpyacRequestResult, type TestResult } fro
 import { runChain, type ChainEntry } from './chain';
 import { runRequest } from './run';
 import { buildWorkspace, listFiles, type IndexedRequest, type ScannedFile } from './workspace';
+import { readEnvNames } from './store';
 import { importCommand, listCommand, printHelp, printVersion, removeCommand, sendCommand } from './commands';
 import { SearchableList } from './ui/SearchableList';
 import { ImportForm } from './ui/ImportForm';
@@ -60,7 +61,7 @@ const fileGroup = (f: ScannedFile) => `${f.source === 'collection' ? '~ imported
 const fileHint = (f: ScannedFile) =>
   `${f.source === 'collection' ? `~ ${fileMark(f)}` : ''}${dirOf(f.relPath)}`;
 
-type Step = 'file' | 'request' | 'search' | 'import' | 'sending' | 'result' | 'error';
+type Step = 'file' | 'request' | 'search' | 'import' | 'env' | 'sending' | 'result' | 'error';
 type From = 'request' | 'search';
 interface Picked {
   file: string;
@@ -78,6 +79,10 @@ function App({ initialFile }: { initialFile?: string }) {
   const [origin, setOrigin] = useState<From>('request');
   const [searchFrom, setSearchFrom] = useState<'file' | 'request'>('request');
   const [importReturn, setImportReturn] = useState<'file' | 'request'>('file');
+  const [activeEnv, setActiveEnv] = useState(process.env.HTUI_ENV ?? 'default');
+  const [envReturn, setEnvReturn] = useState<'file' | 'request'>('request');
+  const [envFile, setEnvFile] = useState('');
+  const [envNames, setEnvNames] = useState<string[] | null>(null);
   const [refresh, setRefresh] = useState(0);
   const [result, setResult] = useState<HttpyacRequestResult | null>(null);
   const [prereqs, setPrereqs] = useState<ChainEntry[]>([]);
@@ -139,12 +144,12 @@ function App({ initialFile }: { initialFile?: string }) {
           file: target.file,
           content,
           target: target.req,
-          env: process.env.HTUI_ENV ?? 'default',
+          env: activeEnv,
         });
         setPrereqs(outcome.prerequisites);
         setResult(outcome.target ?? null);
       } else {
-        setResult(await runRequest(target.file, target.req, process.env.HTUI_ENV ?? 'default'));
+        setResult(await runRequest(target.file, target.req, activeEnv));
       }
       setStep('result');
     } catch (err: unknown) {
@@ -166,6 +171,15 @@ function App({ initialFile }: { initialFile?: string }) {
   function openImport(from: 'file' | 'request') {
     setImportReturn(from);
     setStep('import');
+  }
+
+  async function openEnv(filePath: string, from: 'file' | 'request') {
+    setEnvReturn(from);
+    const file = path.join(path.dirname(filePath), 'http-client.env.json');
+    setEnvFile(file);
+    setEnvNames(null);
+    setStep('env');
+    setEnvNames(await readEnvNames(file));
   }
 
   useInput(
@@ -207,11 +221,29 @@ function App({ initialFile }: { initialFile?: string }) {
     );
   }
 
+  if (step === 'env') {
+    if (!envNames) return <Spinner label="Reading environments…" />;
+    return (
+      <SearchableList
+        header={`Environment · ${relOf(envFile)}  (current: ${activeEnv})`}
+        placeholder="filter environments…"
+        items={envNames}
+        keyOf={(n) => n}
+        labelOf={(n) => n}
+        onSelect={(n) => {
+          setActiveEnv(n);
+          setStep(envReturn);
+        }}
+        onBack={() => setStep(envReturn)}
+      />
+    );
+  }
+
   if (step === 'file') {
     if (!files) return <Spinner label="Scanning for .http / .rest files…" />;
     return (
       <SearchableList
-        header={`Select a file — ${process.cwd()}`}
+        header={`Select a file — ${process.cwd()}  ·  env:${activeEnv}`}
         placeholder="filter files…"
         items={files}
         keyOf={(f) => `${f.source} ${f.relPath}`}
@@ -222,8 +254,16 @@ function App({ initialFile }: { initialFile?: string }) {
           setFile(f.file);
           setStep('request');
         }}
-        onSearchKey={() => void openSearch('file')}
-        onImportKey={() => openImport('file')}
+        onControl={(key, f) => {
+          if (key === 'f') void openSearch('file');
+          else if (key === 'o') openImport('file');
+          else if (key === 'e' && f) void openEnv(f.file, 'file');
+        }}
+        controls={[
+          { key: 'f', label: 'search all' },
+          { key: 'o', label: 'import' },
+          { key: 'e', label: 'env' },
+        ]}
       />
     );
   }
@@ -233,7 +273,7 @@ function App({ initialFile }: { initialFile?: string }) {
     if (!requests) return <Spinner label="Parsing requests…" />;
     return (
       <SearchableList
-        header={relOf(file)}
+        header={`${relOf(file)}  ·  env:${activeEnv}`}
         placeholder="filter requests…"
         items={requests}
         keyOf={(r) => `${r.method} ${r.url} ${r.name}`}
@@ -241,9 +281,18 @@ function App({ initialFile }: { initialFile?: string }) {
         hintOf={(r) => (r.name !== 'default' ? r.name : undefined)}
         onSelect={(r) => void send({ file, req: r }, 'request')}
         onBack={() => setStep('file')}
-        onSearchKey={() => void openSearch('request')}
-        onImportKey={() => openImport('request')}
-        onChainKey={(r) => void send({ file, req: r }, 'request', { chain: true })}
+        onControl={(key, r) => {
+          if (key === 'f') void openSearch('request');
+          else if (key === 'o') openImport('request');
+          else if (key === 'r' && r) void send({ file, req: r }, 'request', { chain: true });
+          else if (key === 'e') void openEnv(file, 'request');
+        }}
+        controls={[
+          { key: 'f', label: 'search all' },
+          { key: 'o', label: 'import' },
+          { key: 'r', label: 'chain' },
+          { key: 'e', label: 'env' },
+        ]}
       />
     );
   }
@@ -252,7 +301,7 @@ function App({ initialFile }: { initialFile?: string }) {
     if (!workspace) return <Spinner label="Indexing requests…" />;
     return (
       <SearchableList
-        header="Search all requests"
+        header={`Search all requests  ·  env:${activeEnv}`}
         placeholder="search method / url / name / path…"
         items={workspace}
         keyOf={(r) => `${r.method} ${r.url} ${r.name} ${r.relPath}`}
