@@ -19,12 +19,20 @@ requests straight from your terminal, backed by plain `.http` files.
 ## Usage
 
 ```bash
-htui                    # scan cwd for .http/.rest, pick file + request
+htui                    # scan cwd for .http/.rest; pick file -> request
 htui api/users.http     # open a specific file
 HTUI_ENV=prod htui      # choose an httpyac environment (-e)
 ```
 
-Keys: `[r]` rerun · `[b]` back · `[q]` quit
+Keys:
+
+| Where | Key | Action |
+|---|---|---|
+| any list | type | filter the list |
+| any list | `↑` `↓` | move · `Enter` select |
+| any list | `Esc` | clear filter, else go back |
+| any list | `Ctrl-F` | search across **all** files |
+| result | `r` rerun · `b` back · `q` quit | |
 
 ## Dev
 

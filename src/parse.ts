@@ -5,11 +5,11 @@
  */
 
 export interface HttpRequest {
-  /** Region name (text after `###`), or "default" for a file without blocks. */
+  /** Region name (text after `###`) for display, or "default" / "request@N". */
   name: string;
   method: string;
   url: string;
-  /** 1-based line of the request line (cosmetic). */
+  /** 1-based line of the request line — the selector handed to httpyac. */
   line: number;
 }
 
@@ -21,13 +21,13 @@ const METHODS = [
 const REQ_RE = new RegExp(`^\\s*(${METHODS.join('|')})\\s+(\\S+)`, 'i');
 const NAME_RE = /^###\s*(.*)$/;
 
-export function hasNamedBlocks(content: string): boolean {
+function hasBlocks(content: string): boolean {
   return /^###/m.test(content);
 }
 
 export function parseRequests(content: string): HttpRequest[] {
   const lines = content.split(/\r?\n/);
-  const named = hasNamedBlocks(content);
+  const named = hasBlocks(content);
   const out: HttpRequest[] = [];
 
   let blockName = 'default';

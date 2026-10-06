@@ -1,36 +1,17 @@
 #!/usr/bin/env node
-import { useEffect, useState } from 'react';
 import { Box, Text, render, useApp, useInput } from 'ink';
-import { Select, Spinner } from '@inkjs/ui';
-import { readFile, readdir } from 'node:fs/promises';
+import { Spinner } from '@inkjs/ui';
+import { useEffect, useState } from 'react';
+import { readFile } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import path from 'node:path';
 import { parseRequests, type HttpRequest } from './parse';
+import { buildWorkspace, findHttpFiles, type IndexedRequest } from './workspace';
+import { SearchableList } from './ui/SearchableList';
 
 const execFileAsync = promisify(execFile);
-
-const HTTP_FILE = /\.(http|rest)$/i;
-const SKIP_DIR = new Set(['node_modules', '.git', 'dist']);
-
-/** Recursively find .http/.rest files (bounded depth, skips junk dirs). */
-async function findHttpFiles(dir: string, depth = 0): Promise<string[]> {
-  if (depth > 6) return [];
-  let entries;
-  try {
-    entries = await readdir(dir, { withFileTypes: true });
-  } catch {
-    return [];
-  }
-  const found: string[] = [];
-  for (const e of entries) {
-    if (SKIP_DIR.has(e.name) || e.name.startsWith('.')) continue;
-    const full = path.join(dir, e.name);
-    if (e.isDirectory()) found.push(...(await findHttpFiles(full, depth + 1)));
-    else if (HTTP_FILE.test(e.name)) found.push(full);
-  }
-  return found;
-}
+const MAX_BODY_LINES = 200;
 
 interface HttpyacResponse {
   statusCode?: number;
@@ -52,8 +33,7 @@ async function runHttpyac(file: string, req: HttpRequest): Promise<HttpyacReques
   // the file lives elsewhere, run from the file's own directory.
   const rel = path.relative(process.cwd(), file);
   const insideCwd = rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
-  const args = ['send', insideCwd ? rel : path.basename(file), '--json', '--no-color'];
-  if (req.name !== 'default') args.push('--name', req.name);
+  const args = ['send', insideCwd ? rel : path.basename(file), '--line', String(req.line), '--json', '--no-color'];
   if (process.env.HTUI_ENV) args.push('-e', process.env.HTUI_ENV);
   const options = {
     encoding: 'utf8' as const,
@@ -94,135 +74,197 @@ function bodyText(body: unknown): string {
   }
 }
 
-type Step = 'file' | 'request' | 'sending' | 'result' | 'error';
+/** Cap what we render — an unbounded body is the biggest screen-flood source. */
+function clipBody(text: string): string {
+  const lines = text.split('\n');
+  if (lines.length <= MAX_BODY_LINES) return text;
+  return `${lines.slice(0, MAX_BODY_LINES).join('\n')}\n… (+${lines.length - MAX_BODY_LINES} more lines)`;
+}
+
+const relOf = (file: string) => path.relative(process.cwd(), file);
+const dirOf = (p: string) => {
+  const d = path.dirname(p);
+  return d === '.' ? './' : `${d}/`;
+};
+
+type Step = 'file' | 'request' | 'search' | 'sending' | 'result' | 'error';
+type From = 'request' | 'search';
+interface Picked {
+  file: string;
+  req: HttpRequest;
+}
 
 function App({ initialFile }: { initialFile?: string }) {
   const { exit } = useApp();
-  const [files, setFiles] = useState<string[]>([]);
   const [step, setStep] = useState<Step>('file');
+  const [files, setFiles] = useState<string[] | null>(null);
   const [file, setFile] = useState<string | null>(null);
-  const [requests, setRequests] = useState<HttpRequest[]>([]);
-  const [picked, setPicked] = useState<HttpRequest | null>(null);
+  const [requests, setRequests] = useState<HttpRequest[] | null>(null);
+  const [workspace, setWorkspace] = useState<IndexedRequest[] | null>(null);
+  const [picked, setPicked] = useState<Picked | null>(null);
+  const [origin, setOrigin] = useState<From>('request');
+  const [searchFrom, setSearchFrom] = useState<'file' | 'request'>('request');
   const [result, setResult] = useState<HttpyacRequestResult | null>(null);
   const [error, setError] = useState('');
 
-  // pick a file
+  function fail(message: string) {
+    setError(message);
+    setStep('error');
+  }
+
+  // initial scan
   useEffect(() => {
-    if (initialFile) {
-      setFile(path.resolve(initialFile));
-      setStep('request');
-      return;
-    }
-    findHttpFiles(process.cwd()).then((found) => {
-      if (found.length === 0) {
-        setError(`No .http / .rest files found under ${process.cwd()}`);
-        setStep('error');
-      } else if (found.length === 1) {
-        setFile(found[0]);
-        setStep('request');
-      } else {
+    findHttpFiles(process.cwd())
+      .then((found) => {
+        if (found.length === 0) {
+          fail(`No .http / .rest files found under ${process.cwd()}`);
+          return;
+        }
         setFiles(found);
-      }
-    });
+        if (initialFile) {
+          setFile(path.resolve(initialFile));
+          setStep('request');
+        } else if (found.length === 1) {
+          setFile(found[0]);
+          setStep('request');
+        }
+      })
+      .catch((err: unknown) => fail(err instanceof Error ? err.message : String(err)));
   }, [initialFile]);
 
-  // load requests when a file is chosen
+  // parse requests when a file is chosen
   useEffect(() => {
     if (!file) return;
+    setRequests(null);
     readFile(file, 'utf8')
       .then((content) => {
         const reqs = parseRequests(content);
-        setRequests(reqs);
         if (reqs.length === 0) {
-          setError(`No selectable requests in ${path.relative(process.cwd(), file)}`);
-          setStep('error');
+          fail(`No selectable requests in ${relOf(file)}`);
+          return;
         }
+        setRequests(reqs);
       })
-      .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : String(err));
-        setStep('error');
-      });
+      .catch((err: unknown) => fail(err instanceof Error ? err.message : String(err)));
   }, [file]);
 
-  async function send(req: HttpRequest) {
-    if (!file) return;
-    setPicked(req);
+  async function send(target: Picked, from: From) {
+    setPicked(target);
+    setOrigin(from);
+    setError('');
     setStep('sending');
     try {
-      setResult(await runHttpyac(file, req));
+      setResult(await runHttpyac(target.file, target.req));
       setStep('result');
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err));
-      setStep('error');
+      fail(err instanceof Error ? err.message : String(err));
     }
   }
 
-  useInput((input) => {
-    if (step === 'error' && input === 'q') exit();
-    if (step !== 'result') return;
-    if (input === 'q') exit();
-    if (input === 'b') {
-      setStep('request');
-      setResult(null);
+  async function openSearch(from: 'file' | 'request') {
+    setSearchFrom(from);
+    setStep('search');
+    if (workspace) return;
+    try {
+      setWorkspace(await buildWorkspace(process.cwd()));
+    } catch (err: unknown) {
+      fail(err instanceof Error ? err.message : String(err));
     }
-    if (input === 'r' && picked) void send(picked);
-  });
+  }
+
+  useInput(
+    (input) => {
+      if (input === 'q') exit();
+      if (input === 'b' && file) {
+        setResult(null);
+        setError('');
+        setStep(origin === 'search' ? 'search' : 'request');
+      }
+      if (input === 'r' && step === 'result' && picked) void send(picked, origin);
+    },
+    { isActive: step === 'result' || step === 'error' },
+  );
 
   if (step === 'error') {
     return (
       <Box flexDirection="column">
         <Text color="red">✗ {error}</Text>
-        <Text dimColor>q to quit</Text>
+        <Text dimColor>{file ? '[b] back  ' : ''}[q] quit</Text>
       </Box>
     );
   }
 
   if (step === 'file') {
+    if (!files) return <Spinner label="Scanning for .http / .rest files…" />;
     return (
-      <Box flexDirection="column">
-        <Text bold>Select an .http file</Text>
-        <Select
-          options={files.map((f) => ({ label: path.relative(process.cwd(), f), value: f }))}
-          onChange={(value) => {
-            setFile(value);
-            setStep('request');
-          }}
-        />
-      </Box>
+      <SearchableList
+        header={`Select a file — ${process.cwd()}`}
+        placeholder="filter files…"
+        items={files}
+        keyOf={(f) => relOf(f)}
+        labelOf={(f) => path.basename(f)}
+        hintOf={(f) => dirOf(relOf(f))}
+        groupOf={(f) => dirOf(relOf(f))}
+        onSelect={(f) => {
+          setFile(f);
+          setStep('request');
+        }}
+        onSearchKey={() => void openSearch('file')}
+      />
     );
   }
 
   if (step === 'request') {
+    if (!file) return <Text color="red">No file selected.</Text>;
+    if (!requests) return <Spinner label="Parsing requests…" />;
     return (
-      <Box flexDirection="column">
-        <Text bold>{path.relative(process.cwd(), file ?? '')}</Text>
-        <Select
-          options={requests.map((r, i) => ({
-            label: `${r.method} ${r.url}${r.name !== 'default' ? `  · ${r.name}` : ''}`,
-            value: String(i),
-          }))}
-          onChange={(value) => void send(requests[Number(value)])}
-        />
-      </Box>
+      <SearchableList
+        header={relOf(file)}
+        placeholder="filter requests…"
+        items={requests}
+        keyOf={(r) => `${r.method} ${r.url} ${r.name}`}
+        labelOf={(r) => `${r.method} ${r.url}`}
+        hintOf={(r) => (r.name !== 'default' ? r.name : undefined)}
+        onSelect={(r) => void send({ file, req: r }, 'request')}
+        onBack={() => setStep('file')}
+        onSearchKey={() => void openSearch('request')}
+      />
+    );
+  }
+
+  if (step === 'search') {
+    if (!workspace) return <Spinner label="Indexing requests…" />;
+    return (
+      <SearchableList
+        header="Search all requests"
+        placeholder="search method / url / name / path…"
+        items={workspace}
+        keyOf={(r) => `${r.method} ${r.url} ${r.name} ${r.relPath}`}
+        labelOf={(r) => `${r.method} ${r.url}`}
+        hintOf={(r) => `${r.relPath}${r.name !== 'default' ? ` · ${r.name}` : ''}`}
+        onSelect={(r) => void send({ file: r.file, req: r }, 'search')}
+        onBack={() => setStep(searchFrom)}
+      />
     );
   }
 
   if (step === 'sending') {
-    return <Spinner label={`Sending ${picked?.method} ${picked?.url} …`} />;
+    return <Spinner label={`Sending ${picked?.req.method} ${picked?.req.url} …`} />;
   }
 
+  const response = result?.response;
   return (
     <Box flexDirection="column">
-      <Text color={statusColor(result?.response?.statusCode)}>
-        {picked?.method} {picked?.url} → {result?.response?.statusCode ?? '?'}{' '}
-        {result?.response?.statusMessage ?? ''}
+      <Text color={statusColor(response?.statusCode)}>
+        {picked?.req.method} {picked?.req.url} → {response?.statusCode ?? '?'} {response?.statusMessage ?? ''}
         {result?.duration != null ? `  ${Math.round(result.duration)}ms` : ''}
       </Text>
-      {result?.response?.headers ? (
-        <Text dimColor>{JSON.stringify(result.response.headers, null, 2)}</Text>
+      {picked ? <Text dimColor>{relOf(picked.file)}</Text> : null}
+      {response?.headers ? (
+        <Text dimColor>{clipBody(JSON.stringify(response.headers, null, 2))}</Text>
       ) : null}
       <Box marginTop={1}>
-        <Text>{bodyText(result?.response?.body)}</Text>
+        <Text>{clipBody(bodyText(response?.body))}</Text>
       </Box>
       {result?.testResults?.length ? (
         <Box marginTop={1} flexDirection="column">
@@ -238,6 +280,13 @@ function App({ initialFile }: { initialFile?: string }) {
       </Box>
     </Box>
   );
+}
+
+if (!process.stdin.isTTY) {
+  process.stderr.write(
+    'htui: needs an interactive terminal (TTY). Non-interactive: `httpyac send <file> --json`.\n',
+  );
+  process.exit(1);
 }
 
 render(<App initialFile={process.argv[2]} />);

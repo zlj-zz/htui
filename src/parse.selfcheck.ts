@@ -23,12 +23,18 @@ Content-Type: application/json
 GRPC localhost:50051/api.Ping/Ping
 `;
 const reqs = parseRequests(multi);
-assert.deepEqual(reqs.map((r) => [r.name, r.method]), [
-  ['list users', 'GET'],
-  ['create user', 'POST'],
-  ['gRPC ping', 'GRPC'],
+assert.deepEqual(reqs.map((r) => [r.name, r.method, r.line]), [
+  ['list users', 'GET', 5],
+  ['create user', 'POST', 8],
+  ['gRPC ping', 'GRPC', 14],
 ]);
 assert.equal(reqs[0].url, '{{host}}/users');
+
+// anonymous `###` block: gets a display name, and its request line still works
+// as the httpyac selector
+assert.deepEqual(parseRequests('###\nGET http://x/y'), [
+  { name: 'request@1', method: 'GET', url: 'http://x/y', line: 2 },
+]);
 
 // inline options on the request line must not break method/url extraction
 assert.equal(parseRequests('### t\nGET https://ex.com/x?a=1&b=2').at(0)?.url, 'https://ex.com/x?a=1&b=2');
