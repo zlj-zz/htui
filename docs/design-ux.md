@@ -344,10 +344,24 @@ spec 选择器（复用 `SearchableList` 列 `*.json/*.yaml`）→ 命名 → �
 
 ---
 
-## 12. 仍未决
+## 12. 状态与待办
 
-- `.local.http` 与生成物**在 Requests 屏并列**的具体形态（聚合视图 vs 跳转）—— S3。
+**已实现**：S1 · S2（含 Ctrl-E）· S2.5 · S3（`e`/`v`/`t`）· S4（`y`/`Y`/`w`/`h`）· S5（`?` 帮助）。
+`htui send`（headless run-chain）已实现；`--name` 语义已定。
 
-已解决（原 §12 三条）：
-- `--name` 匹配语义 → **解析后的名字**（`# @name` > `### 标题`）；不匹配会弹交互提示，故只按解析名传。
-- `htui send` 输出契约 → `-n NAME | --line N`、`--chain`、`-e ENV`、`--json`；退出码 0/1/2。**已实现。**
+**未决 / 待办**（按建议顺序）：
+
+| 项 | 归属 | 备注 |
+|---|---|---|
+| `Esc` 取消在途发送 | S4 | 需把 `execFile` 的 child 句柄从 `runRequest`/`runChain` 留出来 |
+| `/` 响应体内搜索 | S4 | 进入输入模式（§5） |
+| 启动时检测缺 `httpyac` | S5 | 与运行时 ENOENT 区分 |
+| 旧扁平布局迁移提示 | S5 | 代码已跳过旧文件、`remove` 兼容；只差文档/提示 |
+| `.local.http` 与生成物**在 Requests 屏并列** | S3 遗留 | `c`（建 case）随之 |
+| （可选）全屏三栏 + 真状态栏 | S6 | 低优先 |
+
+**实现与 §11 的差异（更正）**：
+- 生成器把变量交给 env：`openapiToHttp` 返回 `{ text, vars }`（而非文本内联）。
+- `SearchableList` 把四个 `on*Key` 收敛为一个 `onControl(key, item)` + `controls[]`。
+- 编辑器交接用 Ink 官方 **`suspendTerminal()`**，不是手工 raw-mode 交接。
+- **未**新建 `src/ui/EnvPicker.tsx`（环境选择器复用 `SearchableList`）；新增了 `src/editor.ts`、`src/share.ts`、`src/run.ts`、`src/store.ts`。
