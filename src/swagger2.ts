@@ -6,6 +6,10 @@
  */
 import type { OpenApiDoc } from './openapi';
 
+// ponytail: v2 and v3 shapes do not map 1:1, so a couple of values are cast
+// loosely (`as unknown as OpenApiDoc['components']`). Behaviour is pinned by
+// swagger2.selfcheck + openapi.selfcheck + import.e2e.
+
 const METHODS = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch'] as const;
 
 export interface Swagger2Doc {

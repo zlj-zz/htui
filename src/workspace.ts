@@ -52,7 +52,7 @@ export async function listFiles(root: string): Promise<ScannedFile[]> {
   );
 
   // Both `~/.config/htui/collections` and `<root>/.htui/collections` (--local).
-  const dirs = [collectionsDir(false), collectionsDir(true)];
+  const dirs = [collectionsDir(false), path.join(root, '.htui', 'collections')];
   const collections = (
     await Promise.all(
       dirs.map(async (dir) =>

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { Box, Text, render, useApp, useInput } from 'ink';
 import { Spinner } from '@inkjs/ui';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { readFile, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -10,7 +10,7 @@ import { hasResponse, isOk, testIcon, type HttpyacRequestResult, type TestResult
 import { runChain, type ChainEntry } from './chain';
 import { runRequest } from './run';
 import { buildWorkspace, listFiles, type IndexedRequest, type ScannedFile } from './workspace';
-import { readEnvNames } from './store';
+import { collectEnvNames } from './store';
 import { openEditor } from './editor';
 import { copyToTerminal, toCurl } from './share';
 import { importCommand, listCommand, printHelp, printVersion, removeCommand, sendCommand } from './commands';
@@ -72,6 +72,19 @@ const fileGroup = (f: ScannedFile) => `${f.source === 'collection' ? '~ imported
 const fileHint = (f: ScannedFile) =>
   `${f.source === 'collection' ? `~ ${fileMark(f)}` : ''}${dirOf(f.relPath)}`;
 
+// Module-level accessors: stable identities, so SearchableList's useMemo holds.
+const fileKey = (f: ScannedFile) => `${f.source} ${f.relPath}`;
+const fileLabel = (f: ScannedFile) => path.basename(f.file);
+const reqKey = (r: HttpRequest) => `${r.method} ${r.url} ${r.name}`;
+const reqLabel = (r: HttpRequest) => `${r.method} ${r.url}`;
+const reqHint = (r: HttpRequest) => (r.name !== 'default' ? r.name : undefined);
+const searchKey = (r: IndexedRequest) => `${r.method} ${r.url} ${r.name} ${r.relPath}`;
+const searchHint = (r: IndexedRequest) => `${r.relPath}${r.name !== 'default' ? ` · ${r.name}` : ''}`;
+const historyKey = (e: HistoryEntry) => `${e.method} ${e.url} ${e.name}`;
+const historyLabel = (e: HistoryEntry) => `${e.method} ${e.url}`;
+const historyHint = (e: HistoryEntry) => `${e.ok ? '✓' : '✗'} ${e.status ?? '?'}  ${e.name}`;
+const envLabel = (n: string) => n;
+
 type Step = 'file' | 'request' | 'search' | 'import' | 'env' | 'sending' | 'result' | 'history' | 'help' | 'error';
 type From = 'request' | 'search';
 interface Picked {
@@ -108,6 +121,13 @@ function App({ initialFile }: { initialFile?: string }) {
   const [prereqs, setPrereqs] = useState<ChainEntry[]>([]);
   const [showHeaders, setShowHeaders] = useState(false);
   const [notice, setNotice] = useState('');
+
+  // Render-side memo: parsing/pretty-printing a body on every keypress is wasteful.
+  const bodyView = useMemo(() => clipBody(bodyText(result?.response?.body)), [result]);
+  const headersView = useMemo(
+    () => (result?.response?.headers ? clipBody(JSON.stringify(result.response.headers, null, 2)) : ''),
+    [result],
+  );
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [historyReturn, setHistoryReturn] = useState<Step>('result');
   const [helpReturn, setHelpReturn] = useState<Step>('file');
@@ -267,11 +287,11 @@ function App({ initialFile }: { initialFile?: string }) {
 
   async function openEnv(filePath: string, from: 'file' | 'request') {
     setEnvReturn(from);
-    const file = path.join(path.dirname(filePath), 'http-client.env.json');
-    setEnvFile(file);
-    setEnvNames(null);
     setStep('env');
-    setEnvNames(await readEnvNames(file));
+    setEnvNames(null);
+    const { names, files } = await collectEnvNames(path.dirname(filePath));
+    setEnvFile(files[0] ?? path.join(path.dirname(filePath), 'http-client.env.json'));
+    setEnvNames(names);
   }
 
   useInput(
@@ -356,9 +376,9 @@ function App({ initialFile }: { initialFile?: string }) {
         onQuit={exit}
         placeholder="filter history…"
         items={history}
-        keyOf={(e) => `${e.method} ${e.url} ${e.name}`}
-        labelOf={(e) => `${e.method} ${e.url}`}
-        hintOf={(e) => `${e.ok ? '✓' : '✗'} ${e.status ?? '?'}  ${e.name}`}
+        keyOf={historyKey}
+        labelOf={historyLabel}
+        hintOf={historyHint}
         onSelect={(e) => void send(e.picked, 'request')}
         onBack={() => setStep(historyReturn)}
       />
@@ -374,8 +394,8 @@ function App({ initialFile }: { initialFile?: string }) {
         onQuit={exit}
         placeholder="filter environments…"
         items={envNames}
-        keyOf={(n) => n}
-        labelOf={(n) => n}
+        keyOf={envLabel}
+        labelOf={envLabel}
         onSelect={(n) => {
           setActiveEnv(n);
           setStep(envReturn);
@@ -398,8 +418,8 @@ function App({ initialFile }: { initialFile?: string }) {
         onQuit={exit}
         placeholder="filter files…"
         items={files}
-        keyOf={(f) => `${f.source} ${f.relPath}`}
-        labelOf={(f) => path.basename(f.file)}
+        keyOf={fileKey}
+        labelOf={fileLabel}
         hintOf={fileHint}
         groupOf={fileGroup}
         onSelect={(f) => {
@@ -434,9 +454,9 @@ function App({ initialFile }: { initialFile?: string }) {
         onQuit={exit}
         placeholder="filter requests…"
         items={requests}
-        keyOf={(r) => `${r.method} ${r.url} ${r.name}`}
-        labelOf={(r) => `${r.method} ${r.url}`}
-        hintOf={(r) => (r.name !== 'default' ? r.name : undefined)}
+        keyOf={reqKey}
+        labelOf={reqLabel}
+        hintOf={reqHint}
         onSelect={(r) => void send({ file, req: r }, 'request')}
         onBack={() => setStep('file')}
         onCommand={(key, r) => {
@@ -468,9 +488,9 @@ function App({ initialFile }: { initialFile?: string }) {
         onQuit={exit}
         placeholder="search method / url / name / path…"
         items={workspace}
-        keyOf={(r) => `${r.method} ${r.url} ${r.name} ${r.relPath}`}
-        labelOf={(r) => `${r.method} ${r.url}`}
-        hintOf={(r) => `${r.relPath}${r.name !== 'default' ? ` · ${r.name}` : ''}`}
+        keyOf={searchKey}
+        labelOf={reqLabel}
+        hintOf={searchHint}
         onSelect={(r) => void send({ file: r.file, req: r }, 'search')}
         onBack={() => setStep(searchFrom)}
       />
@@ -514,13 +534,13 @@ function App({ initialFile }: { initialFile?: string }) {
         <>
           {response?.headers ? (
             showHeaders ? (
-              <Text dimColor>{clipBody(JSON.stringify(response.headers, null, 2))}</Text>
+              <Text dimColor>{headersView}</Text>
             ) : (
               <Text dimColor>▸ headers({Object.keys(response.headers).length}) · h to expand</Text>
             )
           ) : null}
           <Box marginTop={1}>
-            <Text>{clipBody(bodyText(response?.body))}</Text>
+            <Text>{bodyView}</Text>
           </Box>
         </>
       ) : (

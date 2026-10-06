@@ -9,13 +9,37 @@ export interface EditorInvocation {
   args: string[];
 }
 
+/** Split a command string on whitespace, honoring simple single/double quotes. */
+export function splitCommand(command: string): string[] {
+  const out: string[] = [];
+  let current = '';
+  let quote: '"' | "'" | null = null;
+  for (const ch of command) {
+    if (quote) {
+      if (ch === quote) quote = null;
+      else current += ch;
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+    } else if (/\s/.test(ch)) {
+      if (current) {
+        out.push(current);
+        current = '';
+      }
+    } else {
+      current += ch;
+    }
+  }
+  if (current) out.push(current);
+  return out;
+}
+
 /** `+N` for the vim family, `--goto file:N` for VS Code; otherwise just the file. */
 export function editorInvocation(
   file: string,
   line: number,
   env: NodeJS.ProcessEnv = process.env,
 ): EditorInvocation {
-  const parts = (env.VISUAL || env.EDITOR || 'vi').trim().split(/\s+/).filter(Boolean);
+  const parts = splitCommand(env.VISUAL || env.EDITOR || 'vi');
   const bin = parts[0] || 'vi';
   const base = parts.slice(1);
   const name = bin.split(/[\\/]/).pop() ?? bin;

@@ -69,10 +69,13 @@ interface CollectionMeta {
 type CollectionIndex = Record<string, CollectionMeta>;
 
 export async function readIndex(local: boolean): Promise<CollectionIndex> {
+  const file = indexPath(local);
   try {
-    return JSON.parse(await readFile(indexPath(local), 'utf8')) as CollectionIndex;
-  } catch {
-    return {}; // missing or corrupt index is not fatal
+    return JSON.parse(await readFile(file, 'utf8')) as CollectionIndex;
+  } catch (err) {
+    // A missing index is fine; a corrupt one should not pass silently.
+    if (!isMissing(err)) process.stderr.write(`htui: ignoring unreadable ${file}\n`);
+    return {};
   }
 }
 
@@ -109,6 +112,37 @@ export async function readEnvNames(file: string): Promise<string[]> {
   } catch {
     return [];
   }
+}
+
+async function fileExists(file: string): Promise<boolean> {
+  try {
+    await readFile(file);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Nearest-first http-client.env.json files from `startDir` up to the fs root. */
+export async function findEnvFiles(startDir: string): Promise<string[]> {
+  const found: string[] = [];
+  let dir = path.resolve(startDir);
+  for (;;) {
+    const file = path.join(dir, 'http-client.env.json');
+    if (await fileExists(file)) found.push(file);
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return found;
+}
+
+/** Every environment name visible to a file in `startDir` (httpyac walks parents). */
+export async function collectEnvNames(startDir: string): Promise<{ names: string[]; files: string[] }> {
+  const files = await findEnvFiles(startDir);
+  const names = new Set<string>();
+  for (const file of files) for (const name of await readEnvNames(file)) names.add(name);
+  return { names: [...names].sort(), files };
 }
 
 /**

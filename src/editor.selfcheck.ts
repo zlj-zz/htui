@@ -1,5 +1,16 @@
 import assert from 'node:assert/strict';
-import { editorInvocation } from './editor';
+import { editorInvocation, splitCommand } from './editor';
+
+// command splitting honors simple quoting
+assert.deepEqual(splitCommand('code --user-data-dir="/x y" --wait'), ['code', '--user-data-dir=/x y', '--wait']);
+assert.deepEqual(splitCommand('my editor'), ['my', 'editor']);
+assert.deepEqual(splitCommand('"my editor"'), ['my editor']);
+assert.deepEqual(splitCommand("'my editor'"), ['my editor']);
+assert.deepEqual(splitCommand('  nvim  '), ['nvim']);
+assert.deepEqual(editorInvocation('a.http', 2, { EDITOR: 'code --user-data-dir="/x y"' }), {
+  bin: 'code',
+  args: ['--user-data-dir=/x y', '--goto', 'a.http:2'],
+});
 
 // vim family: +N
 assert.deepEqual(editorInvocation('a.http', 12, { VISUAL: 'nvim' }), { bin: 'nvim', args: ['+12', 'a.http'] });

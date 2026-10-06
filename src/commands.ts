@@ -12,7 +12,7 @@ import { isOk, type HttpyacRequestResult } from './result';
 import { runRequest, selectRequest } from './run';
 import { collectionDir, collectionsDir, readIndex, sanitizeName, writeIndex } from './store';
 
-interface Flags {
+export interface Flags {
   name?: string;
   baseUrl?: string;
   env?: string;
@@ -26,7 +26,7 @@ interface Flags {
   positional: string[];
 }
 
-function parseFlags(args: string[]): Flags {
+export function parseFlags(args: string[]): Flags {
   const flags: Flags = { force: false, local: false, chain: false, json: false, positional: [] };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];

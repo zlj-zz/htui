@@ -51,7 +51,15 @@ try {
   // the login cookie set in the prerequisite reached the target
   assert.equal(JSON.parse(String(outcome.target?.response?.body)).cookie, 'sid=abc');
 
-  console.log('chain.e2e: ok (session cookie flowed through the slice)');
+  // a preamble `@var` must survive the slice and apply under --all
+  const preFile = path.join(dir, 'preamble.http');
+  const preContent = [`@host = http://127.0.0.1:${port}`, '', '### ping', 'GET {{host}}/ping'].join('\n');
+  await writeFile(preFile, preContent);
+  const preTarget = parseRequests(preContent)[0];
+  const preOutcome = await runChain({ file: preFile, content: preContent, target: preTarget });
+  assert.equal(preOutcome.target?.response?.statusCode, 200, 'preamble @var must resolve under --all');
+
+  console.log('chain.e2e: ok (session cookie + preamble var survive the slice)');
 } finally {
   server.close();
   await rm(dir, { recursive: true, force: true });
