@@ -16,6 +16,7 @@ const SECTIONS: Array<{ title: string; keys: Array<[string, string]> }> = [
     title: 'Lists',
     keys: [
       ['e', 'edit the highlighted request in $EDITOR'],
+      ['h', 'edit the request headers'],
       ['i', 'import an OpenAPI spec'],
       ['s', 'switch environment'],
       ['r', 'run-chain (run prerequisites first)'],

@@ -32,6 +32,7 @@ Keys:
 | any list | `↑` `↓` | move · `Enter` open/send |
 | any list | `Esc` | clear filter, else go back |
 | any list | `e` | edit the highlighted request in `$EDITOR` |
+| requests | `h` | edit the request headers (add / edit / delete) |
 | any list | `i` | import an OpenAPI spec |
 | any list | `s` | switch environment |
 | requests | `r` | run-chain (prerequisites first) |

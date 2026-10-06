@@ -2,7 +2,8 @@
 import { Box, Text, render, useApp, useInput } from 'ink';
 import { Spinner } from '@inkjs/ui';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { parseRequests, type HttpRequest } from './parse';
@@ -17,6 +18,7 @@ import { importCommand, listCommand, printHelp, printVersion, removeCommand, sen
 import { SearchableList } from './ui/SearchableList';
 import { ImportForm } from './ui/ImportForm';
 import { Help } from './ui/Help';
+import { HeaderForm } from './ui/HeaderForm';
 
 const MAX_BODY_LINES = 200;
 
@@ -60,6 +62,16 @@ function rawBody(result: HttpyacRequestResult | null): string {
   return typeof body === 'string' ? body : JSON.stringify(body, null, 2);
 }
 
+async function writeFileAtomic(file: string, content: string): Promise<void> {
+  const tmp = `${file}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(tmp, content, 'utf8');
+    await rename(tmp, file);
+  } finally {
+    await rm(tmp, { force: true });
+  }
+}
+
 const relOf = (file: string) => path.relative(process.cwd(), file);
 const dirOf = (p: string) => {
   const d = path.dirname(p);
@@ -85,7 +97,7 @@ const historyLabel = (e: HistoryEntry) => `${e.method} ${e.url}`;
 const historyHint = (e: HistoryEntry) => `${e.ok ? '✓' : '✗'} ${e.status ?? '?'}  ${e.name}`;
 const envLabel = (n: string) => n;
 
-type Step = 'file' | 'request' | 'search' | 'import' | 'env' | 'sending' | 'result' | 'history' | 'help' | 'error';
+type Step = 'file' | 'request' | 'search' | 'import' | 'env' | 'headers' | 'sending' | 'result' | 'history' | 'help' | 'error';
 type From = 'request' | 'search';
 interface Picked {
   file: string;
@@ -116,6 +128,8 @@ function App({ initialFile }: { initialFile?: string }) {
   const [envReturn, setEnvReturn] = useState<'file' | 'request'>('request');
   const [envFile, setEnvFile] = useState('');
   const [envNames, setEnvNames] = useState<string[] | null>(null);
+  const [headerCtx, setHeaderCtx] = useState<{ file: string; content: string; req: HttpRequest } | null>(null);
+  const [headerReturn, setHeaderReturn] = useState<Step>('request');
   const [refresh, setRefresh] = useState(0);
   const [result, setResult] = useState<HttpyacRequestResult | null>(null);
   const [prereqs, setPrereqs] = useState<ChainEntry[]>([]);
@@ -280,6 +294,17 @@ function App({ initialFile }: { initialFile?: string }) {
     setStep('import');
   }
 
+  async function openHeaders(filePath: string, req: HttpRequest, from: Step) {
+    try {
+      const content = await readFile(filePath, 'utf8');
+      setHeaderCtx({ file: filePath, content, req });
+      setHeaderReturn(from);
+      setStep('headers');
+    } catch (err: unknown) {
+      fail(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   function openHelp(from: Step) {
     setHelpReturn(from);
     setStep('help');
@@ -362,6 +387,22 @@ function App({ initialFile }: { initialFile?: string }) {
           setStep(importReturn);
           setRefresh((n) => n + 1);
         }}
+      />
+    );
+  }
+
+  if (step === 'headers') {
+    if (!headerCtx) return <Spinner label="Reading request…" />;
+    return (
+      <HeaderForm
+        content={headerCtx.content}
+        req={headerCtx.req}
+        onSave={async (next) => {
+          await writeFileAtomic(headerCtx.file, next);
+          setHeaderCtx({ ...headerCtx, content: next });
+          setRefresh((n) => n + 1);
+        }}
+        onClose={() => setStep(headerReturn)}
       />
     );
   }
@@ -461,6 +502,7 @@ function App({ initialFile }: { initialFile?: string }) {
         onBack={() => setStep('file')}
         onCommand={(key, r) => {
           if (key === 'e' && r) void edit(file, r.line);
+          else if (key === 'h' && r) void openHeaders(file, r, 'request');
           else if (key === 'i') openImport('request');
           else if (key === 'r' && r) void send({ file, req: r }, 'request', { chain: true });
           else if (key === 's') void openEnv(file, 'request');
@@ -470,6 +512,7 @@ function App({ initialFile }: { initialFile?: string }) {
         }}
         controls={[
           { key: 'e', label: 'edit' },
+          { key: 'h', label: 'headers' },
           { key: 'i', label: 'import' },
           { key: 'r', label: 'chain' },
           { key: 's', label: 'env' },

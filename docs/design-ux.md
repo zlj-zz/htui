@@ -205,6 +205,7 @@ spec 选择器（复用 `SearchableList` 列 `*.json/*.yaml`）→ 命名 → �
 | `Enter` | 列表 | 主操作：open / send |
 | `Esc` | 全局 | 过滤中→退出；有过滤→清空；否则返回 |
 | `e` | 列表/结果 | `$EDITOR` 打开当前请求（到该行）—— **不必先发一次** |
+| `h` | Requests | 编辑请求 header（增/改/删，写回 `.http`） |
 | `i` | 列表 | 导入 OpenAPI |
 | `s` | 列表 | 环境选择器 |
 | `r` | Requests | run-chain（前置 + 目标） |
