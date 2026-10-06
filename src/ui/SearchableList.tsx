@@ -23,6 +23,8 @@ export interface SearchableListProps<T> {
   onBack?: () => void;
   /** Reserved Ctrl-<key> actions (they never land in the filter). */
   onControl?: (key: string, item: T | undefined) => void;
+  /** `?` when the filter is empty. */
+  onHelp?: () => void;
   /** Footer hints for the reserved keys (display only). */
   controls?: ControlHint[];
 }
@@ -56,6 +58,7 @@ export function SearchableList<T>({
   onSelect,
   onBack,
   onControl,
+  onHelp,
   controls,
 }: SearchableListProps<T>) {
   const [query, setQuery] = useState('');
@@ -97,6 +100,11 @@ export function SearchableList<T>({
         return;
       }
       if (key.ctrl || key.meta) return;
+      // `?` is help when nothing is being typed (to type a literal ? start elsewhere).
+      if (input === '?' && !query) {
+        onHelp?.();
+        return;
+      }
       if (key.backspace || key.delete) {
         setQuery((q) => q.slice(0, -1));
         return;
@@ -129,6 +137,7 @@ export function SearchableList<T>({
         {start > 0 ? ' ↑' : ''}
         {end < filtered.length ? ' ↓' : ''}
         {controls?.map((c) => `   [Ctrl-${c.key.toUpperCase()}] ${c.label}`).join('')}
+        {onHelp ? '    ?  help' : ''}
       </Text>
     </Box>
   );

@@ -14,6 +14,7 @@ import { openEditor } from './editor';
 import { importCommand, listCommand, printHelp, printVersion, removeCommand, sendCommand } from './commands';
 import { SearchableList } from './ui/SearchableList';
 import { ImportForm } from './ui/ImportForm';
+import { Help } from './ui/Help';
 
 const MAX_BODY_LINES = 200;
 
@@ -62,7 +63,7 @@ const fileGroup = (f: ScannedFile) => `${f.source === 'collection' ? '~ imported
 const fileHint = (f: ScannedFile) =>
   `${f.source === 'collection' ? `~ ${fileMark(f)}` : ''}${dirOf(f.relPath)}`;
 
-type Step = 'file' | 'request' | 'search' | 'import' | 'env' | 'sending' | 'result' | 'history' | 'error';
+type Step = 'file' | 'request' | 'search' | 'import' | 'env' | 'sending' | 'result' | 'history' | 'help' | 'error';
 type From = 'request' | 'search';
 interface Picked {
   file: string;
@@ -98,6 +99,7 @@ function App({ initialFile }: { initialFile?: string }) {
   const [prereqs, setPrereqs] = useState<ChainEntry[]>([]);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [historyReturn, setHistoryReturn] = useState<Step>('result');
+  const [helpReturn, setHelpReturn] = useState<Step>('file');
   const [error, setError] = useState('');
 
   function fail(message: string) {
@@ -227,6 +229,11 @@ function App({ initialFile }: { initialFile?: string }) {
     setStep('import');
   }
 
+  function openHelp(from: Step) {
+    setHelpReturn(from);
+    setStep('help');
+  }
+
   async function openEnv(filePath: string, from: 'file' | 'request') {
     setEnvReturn(from);
     const file = path.join(path.dirname(filePath), 'http-client.env.json');
@@ -253,9 +260,17 @@ function App({ initialFile }: { initialFile?: string }) {
         setHistoryReturn('result');
         setStep('history');
       }
+      if (input === '?') openHelp(step);
       if (key.ctrl && input === 'r' && picked) void send(picked, origin, { chain: true });
     },
     { isActive: step === 'result' || step === 'error' },
+  );
+
+  useInput(
+    (input, key) => {
+      if (input === '?' || key.escape) setStep(helpReturn);
+    },
+    { isActive: step === 'help' },
   );
 
   if (step === 'error') {
@@ -265,7 +280,7 @@ function App({ initialFile }: { initialFile?: string }) {
         <Text dimColor>
           {file ? '[b] back  ' : ''}
           {requests && requests.length > 1 ? '[Ctrl-R] run chain (prerequisites first)  ' : ''}
-          [q] quit
+          [?] help  [q] quit
         </Text>
       </Box>
     );
@@ -283,10 +298,13 @@ function App({ initialFile }: { initialFile?: string }) {
     );
   }
 
+  if (step === 'help') return <Help />;
+
   if (step === 'history') {
     return (
       <SearchableList
         header={`History (${history.length})  ·  env:${activeEnv}`}
+        onHelp={() => openHelp('history')}
         placeholder="filter history…"
         items={history}
         keyOf={(e) => `${e.method} ${e.url} ${e.name}`}
@@ -303,6 +321,7 @@ function App({ initialFile }: { initialFile?: string }) {
     return (
       <SearchableList
         header={`Environment · ${relOf(envFile)}  (current: ${activeEnv})`}
+        onHelp={() => openHelp('env')}
         placeholder="filter environments…"
         items={envNames}
         keyOf={(n) => n}
@@ -325,6 +344,7 @@ function App({ initialFile }: { initialFile?: string }) {
     return (
       <SearchableList
         header={`Select a file — ${process.cwd()}  ·  env:${activeEnv}`}
+        onHelp={() => openHelp('file')}
         placeholder="filter files…"
         items={files}
         keyOf={(f) => `${f.source} ${f.relPath}`}
@@ -355,6 +375,7 @@ function App({ initialFile }: { initialFile?: string }) {
     return (
       <SearchableList
         header={`${relOf(file)}  ·  env:${activeEnv}`}
+        onHelp={() => openHelp('request')}
         placeholder="filter requests…"
         items={requests}
         keyOf={(r) => `${r.method} ${r.url} ${r.name}`}
@@ -383,6 +404,7 @@ function App({ initialFile }: { initialFile?: string }) {
     return (
       <SearchableList
         header={`Search all requests  ·  env:${activeEnv}`}
+        onHelp={() => openHelp('search')}
         placeholder="search method / url / name / path…"
         items={workspace}
         keyOf={(r) => `${r.method} ${r.url} ${r.name} ${r.relPath}`}
@@ -455,7 +477,7 @@ function App({ initialFile }: { initialFile?: string }) {
       ) : null}
 
       <Box marginTop={1}>
-        <Text dimColor>[r] rerun [e] edit [v] vars [t] history [Ctrl-R] chain [b] back [q] quit</Text>
+        <Text dimColor>[r] rerun [e] edit [v] vars [t] history [Ctrl-R] chain [b] back [?] help [q] quit</Text>
       </Box>
     </Box>
   );
