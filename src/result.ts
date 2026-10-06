@@ -10,11 +10,20 @@ export interface TestResult {
   status?: string;
 }
 
+export interface HttpyacRequest {
+  url?: string;
+  method?: string;
+  headers?: Record<string, string>;
+  body?: unknown;
+}
+
 export interface HttpyacResponse {
   statusCode?: number;
   statusMessage?: string;
   headers?: Record<string, unknown>;
   body?: unknown;
+  /** The fully-resolved request httpyac actually sent. */
+  request?: HttpyacRequest;
 }
 
 export interface HttpyacRequestResult {

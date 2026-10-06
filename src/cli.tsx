@@ -2,7 +2,8 @@
 import { Box, Text, render, useApp, useInput } from 'ink';
 import { Spinner } from '@inkjs/ui';
 import { useEffect, useState } from 'react';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { parseRequests, type HttpRequest } from './parse';
 import { hasResponse, testIcon, type HttpyacRequestResult, type TestResult } from './result';
@@ -11,6 +12,7 @@ import { runRequest } from './run';
 import { buildWorkspace, listFiles, type IndexedRequest, type ScannedFile } from './workspace';
 import { readEnvNames } from './store';
 import { openEditor } from './editor';
+import { copyToTerminal, toCurl } from './share';
 import { importCommand, listCommand, printHelp, printVersion, removeCommand, sendCommand } from './commands';
 import { SearchableList } from './ui/SearchableList';
 import { ImportForm } from './ui/ImportForm';
@@ -49,6 +51,13 @@ function clipBody(text: string): string {
   const lines = text.split('\n');
   if (lines.length <= MAX_BODY_LINES) return text;
   return `${lines.slice(0, MAX_BODY_LINES).join('\n')}\n… (+${lines.length - MAX_BODY_LINES} more lines)`;
+}
+
+/** The full response body as text (unclipped) — what y/w copy or save. */
+function rawBody(result: HttpyacRequestResult | null): string {
+  const body = result?.response?.body;
+  if (body == null) return '';
+  return typeof body === 'string' ? body : JSON.stringify(body, null, 2);
 }
 
 const relOf = (file: string) => path.relative(process.cwd(), file);
@@ -97,6 +106,8 @@ function App({ initialFile }: { initialFile?: string }) {
   const [refresh, setRefresh] = useState(0);
   const [result, setResult] = useState<HttpyacRequestResult | null>(null);
   const [prereqs, setPrereqs] = useState<ChainEntry[]>([]);
+  const [showHeaders, setShowHeaders] = useState(false);
+  const [notice, setNotice] = useState('');
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [historyReturn, setHistoryReturn] = useState<Step>('result');
   const [helpReturn, setHelpReturn] = useState<Step>('file');
@@ -166,6 +177,8 @@ function App({ initialFile }: { initialFile?: string }) {
     setOrigin(from);
     setError('');
     setPrereqs([]);
+    setShowHeaders(false);
+    setNotice('');
     setStep('sending');
     try {
       let res: HttpyacRequestResult | null;
@@ -211,6 +224,16 @@ function App({ initialFile }: { initialFile?: string }) {
       return;
     }
     setRefresh((n) => n + 1);
+  }
+
+  async function saveBody(result: HttpyacRequestResult) {
+    const target = path.join(os.tmpdir(), `htui-body-${Date.now()}.json`);
+    try {
+      await writeFile(target, rawBody(result), 'utf8');
+      setNotice(`saved ${target}`);
+    } catch (err: unknown) {
+      setNotice(`save failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   async function openSearch(from: 'file' | 'request') {
@@ -260,6 +283,23 @@ function App({ initialFile }: { initialFile?: string }) {
         setHistoryReturn('result');
         setStep('history');
       }
+      if (input === 'h' && step === 'result') setShowHeaders((v) => !v);
+      if (input === 'y' && step === 'result' && result) {
+        const r = copyToTerminal(rawBody(result));
+        setNotice(r.ok ? `copied ${r.bytes} bytes` : 'body too large for the clipboard — press w to save it');
+      }
+      if (input === 'Y' && step === 'result' && result && picked) {
+        const sent = result.response?.request;
+        const curl = toCurl({
+          method: sent?.method ?? picked.req.method,
+          url: sent?.url ?? picked.req.url,
+          headers: sent?.headers,
+          body: typeof sent?.body === 'string' ? sent.body : undefined,
+        });
+        const r = copyToTerminal(curl);
+        setNotice(r.ok ? 'copied curl' : 'command too large for the clipboard');
+      }
+      if (input === 'w' && step === 'result' && result) void saveBody(result);
       if (input === '?') openHelp(step);
       if (key.ctrl && input === 'r' && picked) void send(picked, origin, { chain: true });
     },
@@ -452,7 +492,11 @@ function App({ initialFile }: { initialFile?: string }) {
       {completed ? (
         <>
           {response?.headers ? (
-            <Text dimColor>{clipBody(JSON.stringify(response.headers, null, 2))}</Text>
+            showHeaders ? (
+              <Text dimColor>{clipBody(JSON.stringify(response.headers, null, 2))}</Text>
+            ) : (
+              <Text dimColor>▸ headers({Object.keys(response.headers).length}) · h to expand</Text>
+            )
           ) : null}
           <Box marginTop={1}>
             <Text>{clipBody(bodyText(response?.body))}</Text>
@@ -476,8 +520,9 @@ function App({ initialFile }: { initialFile?: string }) {
         </Box>
       ) : null}
 
+      {notice ? <Text color="cyan">{notice}</Text> : null}
       <Box marginTop={1}>
-        <Text dimColor>[r] rerun [e] edit [v] vars [t] history [Ctrl-R] chain [b] back [?] help [q] quit</Text>
+        <Text dimColor>[r] rerun [e] edit [v] vars [t] history [y] copy [Y] curl [w] save [h] headers [?] help [b] back [q] quit</Text>
       </Box>
     </Box>
   );
