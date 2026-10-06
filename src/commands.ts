@@ -10,7 +10,7 @@ import { importOpenApi } from './import-openapi';
 import { parseRequests } from './parse';
 import { hasResponse, type HttpyacRequestResult } from './result';
 import { runRequest, selectRequest } from './run';
-import { collectionsDir, readIndex, sanitizeName, writeIndex } from './store';
+import { collectionDir, collectionsDir, readIndex, sanitizeName, writeIndex } from './store';
 
 interface Flags {
   name?: string;
@@ -54,7 +54,8 @@ export async function importCommand(args: string[]): Promise<number> {
   try {
     const result = await importOpenApi({ specPath: spec, name, baseUrl, force, local });
     const verb = result.overwritten ? 'overwrote' : 'imported';
-    process.stdout.write(`${verb} ${result.name} → ${result.file} (${result.endpoints} requests)\n`);
+    const env = result.varsAdded ? ` · +${result.varsAdded} vars` : '';
+    process.stdout.write(`${verb} ${result.name} → ${result.file} (${result.endpoints} requests)${env}\n`);
     return 0;
   } catch (err) {
     process.stderr.write(`htui import: ${message(err)}\n`);
@@ -91,7 +92,8 @@ export async function removeCommand(args: string[]): Promise<number> {
       process.stderr.write(`htui remove: no such collection "${name}"\n`);
       return 1;
     }
-    await rm(path.join(collectionsDir(local), `${name}.http`), { force: true });
+    await rm(collectionDir(name, local), { recursive: true, force: true });
+    await rm(path.join(collectionsDir(local), `${name}.http`), { force: true }); // legacy flat layout
     delete index[name];
     await writeIndex(local, index);
     process.stdout.write(`removed ${name}\n`);
@@ -125,7 +127,7 @@ export async function sendCommand(args: string[]): Promise<number> {
     return 2;
   }
 
-  const activeEnv = env ?? process.env.HTUI_ENV;
+  const activeEnv = env ?? process.env.HTUI_ENV ?? 'default';
   let target: HttpyacRequestResult | undefined;
   let prerequisites: ChainEntry[] = [];
   try {

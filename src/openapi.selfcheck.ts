@@ -9,10 +9,7 @@ const spec: OpenApiDoc = {
   components: {
     securitySchemes: { bearer: { type: 'http', scheme: 'bearer' } },
     schemas: {
-      Pet: {
-        type: 'object',
-        properties: { name: { type: 'string' }, tag: { type: 'string' } },
-      },
+      Pet: { type: 'object', properties: { name: { type: 'string' }, tag: { type: 'string' } } },
     },
   },
   paths: {
@@ -36,51 +33,47 @@ const spec: OpenApiDoc = {
   },
 };
 
-const out = openapiToHttp(spec, { source: 'petstore.json' });
+const { text, vars } = openapiToHttp(spec, { source: 'petstore.json' });
 
-// provenance header: version + non-deprecated endpoint count
-assert.match(out, /# source: petstore\.json · OpenAPI 3\.0\.3 · 3 endpoints/);
+assert.match(text, /# source: petstore\.json · OpenAPI 3\.0\.3 · 3 endpoints/);
+// variables are NOT declared in the file — a file-level @var would outrank the env
+assert.doesNotMatch(text, /^@/m);
+// ...they come back as environment variables instead
+assert.equal(vars.baseUrl, 'https://api.example.com/v1');
+assert.equal(vars.token, 'REPLACE_ME');
+assert.equal(vars.limit, '20');
+assert.equal(vars.petId, '0');
 
-// base url is a variable
-assert.match(out, /^@baseUrl = https:\/\/api\.example\.com\/v1$/m);
+for (const name of ['listPets', 'createPet', 'getPet']) assert.match(text, new RegExp(`### ${name}$`, 'm'));
+assert.doesNotMatch(text, /### .*old/i);
+assert.match(text, /^GET \{\{baseUrl\}\}\/pets\?limit=\{\{limit\}\}$/m);
+assert.match(text, /^GET \{\{baseUrl\}\}\/pets\/\{\{petId\}\}$/m);
+assert.match(text, /^Authorization: Bearer \{\{token\}\}$/m);
+assert.doesNotMatch(text, /Bearer [A-Za-z0-9._-]{12,}/);
+assert.match(text, /"name": "string"/);
 
-// names from operationId; deprecated is skipped
-for (const name of ['listPets', 'createPet', 'getPet']) assert.match(out, new RegExp(`### ${name}$`, 'm'));
-assert.doesNotMatch(out, /### .*old/i);
-
-// method + templated url (path param + required query param)
-assert.match(out, /^GET \{\{baseUrl\}\}\/pets\?limit=\{\{limit\}\}$/m);
-assert.match(out, /^GET \{\{baseUrl\}\}\/pets\/\{\{petId\}\}$/m);
-
-// auth is a placeholder, never a literal credential
-assert.match(out, /^Authorization: Bearer \{\{token\}\}$/m);
-assert.doesNotMatch(out, /Bearer [A-Za-z0-9._-]{12,}/);
-
-// parameter defaults come from the schema
-assert.match(out, /^@limit = 20$/m);
-assert.match(out, /^@petId = 0$/m);
-
-// body synthesized through the $ref schema
-assert.match(out, /"name": "string"/);
-
-// invariant (S1): every {{var}} is declared in the preamble
-const declared = new Set([...out.matchAll(/^@([A-Za-z0-9_]+)\s*=/gm)].map((m) => m[1]));
-for (const m of out.matchAll(/\{\{([A-Za-z0-9_]+)\}\}/g)) {
-  assert.ok(declared.has(m[1]), `undeclared variable {{${m[1]}}}`);
+// invariant: every variable the file uses is provided by the environment
+for (const m of text.matchAll(/\{\{([A-Za-z0-9_]+)\}\}/g)) {
+  assert.ok(m[1] in vars, `missing env var {{${m[1]}}}`);
 }
 
-// determinism (S2): same input -> byte-identical output
-assert.equal(openapiToHttp(spec, { source: 'petstore.json' }), out);
+// determinism
+const again = openapiToHttp(spec, { source: 'petstore.json' });
+assert.equal(again.text, text);
+assert.deepEqual(again.vars, vars);
 
 // rejections
 assert.throws(() => openapiToHttp({ openapi: '3.0.0', paths: {} }, { source: 'x' }), /no operations/);
 assert.throws(() => openapiToHttp({ swagger: '2.0' }, { source: 'x' }), /Swagger 2\.0/);
 assert.throws(
-  () => openapiToHttp({ openapi: '3.0.0', paths: { '/x': { get: { parameters: [{ $ref: './common.json#/P' }] } } } }, { source: 'x' }),
+  () =>
+    openapiToHttp(
+      { openapi: '3.0.0', paths: { '/x': { get: { parameters: [{ $ref: './common.json#/P' }] } } } },
+      { source: 'x' },
+    ),
   /external \$ref/,
 );
 
-// default name falls back to title, then file name
 assert.equal(defaultCollectionName(spec, 'x.json'), 'Pet Store');
 assert.equal(defaultCollectionName({}, '/a/b/orders.json'), 'orders');
 

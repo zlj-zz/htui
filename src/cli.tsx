@@ -55,8 +55,10 @@ const dirOf = (p: string) => {
 };
 
 // Imported collections live outside the project, so label them distinctly.
+const fileMark = (f: ScannedFile) => (f.kind === 'generated' ? '⟳ ' : f.kind === 'local' ? '✎ ' : '');
 const fileGroup = (f: ScannedFile) => `${f.source === 'collection' ? '~ imported  ' : ''}${dirOf(f.relPath)}`;
-const fileHint = (f: ScannedFile) => `${f.source === 'collection' ? '~ ' : ''}${dirOf(f.relPath)}`;
+const fileHint = (f: ScannedFile) =>
+  `${f.source === 'collection' ? `~ ${fileMark(f)}` : ''}${dirOf(f.relPath)}`;
 
 type Step = 'file' | 'request' | 'search' | 'import' | 'sending' | 'result' | 'error';
 type From = 'request' | 'search';
@@ -137,12 +139,12 @@ function App({ initialFile }: { initialFile?: string }) {
           file: target.file,
           content,
           target: target.req,
-          env: process.env.HTUI_ENV,
+          env: process.env.HTUI_ENV ?? 'default',
         });
         setPrereqs(outcome.prerequisites);
         setResult(outcome.target ?? null);
       } else {
-        setResult(await runRequest(target.file, target.req, process.env.HTUI_ENV));
+        setResult(await runRequest(target.file, target.req, process.env.HTUI_ENV ?? 'default'));
       }
       setStep('result');
     } catch (err: unknown) {

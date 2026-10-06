@@ -81,3 +81,59 @@ export async function writeIndex(local: boolean, index: CollectionIndex): Promis
   await mkdir(dir, { recursive: true });
   await writeFile(indexPath(local), `${JSON.stringify(index, null, 2)}\n`, 'utf8');
 }
+
+// --- per-collection layout: collections/<name>/{<name>.http, http-client.env.json, <name>.local.http} ---
+
+export function collectionDir(name: string, local: boolean): string {
+  return path.join(collectionsDir(local), name);
+}
+
+export function collectionHttp(name: string, local: boolean): string {
+  return path.join(collectionDir(name, local), `${name}.http`);
+}
+
+export function collectionEnv(name: string, local: boolean): string {
+  return path.join(collectionDir(name, local), 'http-client.env.json');
+}
+
+export type EnvVars = Record<string, string>;
+
+/** Environment names declared in an http-client.env.json file (for the picker). */
+export async function readEnvNames(file: string): Promise<string[]> {
+  try {
+    return Object.keys(JSON.parse(await readFile(file, 'utf8')) as Record<string, unknown>);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Write `vars` into `envName`, filling only missing keys so a re-import never
+ * clobbers a value the user edited. `forceKeys` are written regardless
+ * (an explicit --base-url). Returns how many keys were added.
+ */
+export async function mergeEnv(
+  name: string,
+  local: boolean,
+  envName: string,
+  vars: EnvVars,
+  forceKeys: string[] = [],
+): Promise<number> {
+  const file = collectionEnv(name, local);
+  let env: Record<string, EnvVars> = {};
+  try {
+    env = JSON.parse(await readFile(file, 'utf8')) as Record<string, EnvVars>;
+  } catch {
+    env = {};
+  }
+  const target = env[envName] ?? (env[envName] = {});
+  const force = new Set(forceKeys);
+  let added = 0;
+  for (const [key, value] of Object.entries(vars)) {
+    if (!(key in target)) added++;
+    if (force.has(key) || !(key in target)) target[key] = value;
+  }
+  await mkdir(collectionDir(name, local), { recursive: true });
+  await writeFile(file, `${JSON.stringify(env, null, 2)}\n`, 'utf8');
+  return added;
+}

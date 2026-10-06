@@ -1,7 +1,7 @@
 /**
  * End-to-end: import an OpenAPI spec, then send every generated request with
- * httpyac `--line` against a local mock server. This is the test that proves
- * the whole contract (generate -> parse -> select by line -> httpyac -> HTTP).
+ * httpyac against a local mock server. Proves the contract:
+ * generate -> write http + env -> parse -> select by line -> httpyac (-e default).
  *
  * Run: npm run e2e   (needs `httpyac` on PATH; not part of `npm run check`)
  */
@@ -30,6 +30,14 @@ const port = (server.address() as { port: number }).port;
 
 const home = await mkdtemp(path.join(os.tmpdir(), 'htui-e2e-'));
 process.env.HTUI_HOME = home; // collections land here, never in the repo
+
+/** httpyac needs `-e default` now that variables live in the env file. */
+const send = (file: string, line: number) =>
+  execFileAsync(
+    'httpyac',
+    ['send', path.basename(file), '--line', String(line), '--json', '--no-color', '-e', 'default'],
+    { cwd: path.dirname(file) },
+  );
 
 try {
   const specPath = path.join(home, 'petstore.json');
@@ -63,25 +71,37 @@ try {
 
   const result = await importOpenApi({ specPath, name: 'petstore' });
   assert.equal(result.endpoints, 3);
+  assert.ok(result.varsAdded > 0);
 
+  // generated file: requests only; env file carries the variables
   const content = await readFile(result.file, 'utf8');
+  assert.doesNotMatch(content, /^@/m);
+  const env = JSON.parse(
+    await readFile(path.join(path.dirname(result.file), 'http-client.env.json'), 'utf8'),
+  ) as Record<string, Record<string, string>>;
+  assert.equal(env.default.baseUrl, `http://127.0.0.1:${port}`);
+
   const requests = parseRequests(content);
   assert.equal(requests.length, 3);
 
   const observed: string[] = [];
   for (const request of requests) {
-    const { stdout } = await execFileAsync(
-      'httpyac',
-      ['send', path.basename(result.file), '--line', String(request.line), '--json', '--no-color'],
-      { cwd: path.dirname(result.file) },
-    );
+    const { stdout } = await send(result.file, request.line);
     const response = JSON.parse(stdout).requests[0].response;
     assert.equal(response.statusCode, 200, `line ${request.line} status`);
     const echoed = JSON.parse(response.body) as { method: string; path: string };
     observed.push(`${echoed.method} ${echoed.path}`);
   }
-
   assert.deepEqual(observed.sort(), ['GET /pets/0', 'GET /pets?limit=20', 'POST /pets']);
+
+  // re-import must not clobber env edits
+  const envPath = path.join(path.dirname(result.file), 'http-client.env.json');
+  const edited = JSON.parse(await readFile(envPath, 'utf8')) as Record<string, Record<string, string>>;
+  edited.default.baseUrl = 'http://edited';
+  await writeFile(envPath, JSON.stringify(edited));
+  await importOpenApi({ specPath, name: 'petstore', force: true });
+  const after = JSON.parse(await readFile(envPath, 'utf8')) as Record<string, Record<string, string>>;
+  assert.equal(after.default.baseUrl, 'http://edited'); // write-once: user value kept
 
   // overwrite semantics
   await assert.rejects(() => importOpenApi({ specPath, name: 'petstore' }), /already exists/);
@@ -106,17 +126,11 @@ try {
   );
   const v2 = await importOpenApi({ specPath: v2Path, name: 'legacy' });
   assert.equal(v2.endpoints, 1);
-  const v2Content = await readFile(v2.file, 'utf8');
-  assert.match(v2Content, new RegExp(`^@baseUrl = http://127\\.0\\.0\\.1:${port}/v1$`, 'm'));
-  const [ping] = parseRequests(v2Content);
-  const pingOut = await execFileAsync(
-    'httpyac',
-    ['send', path.basename(v2.file), '--line', String(ping.line), '--json', '--no-color'],
-    { cwd: path.dirname(v2.file) },
-  );
+  const [ping] = parseRequests(await readFile(v2.file, 'utf8'));
+  const pingOut = await send(v2.file, ping.line);
   assert.equal(JSON.parse(JSON.parse(pingOut.stdout).requests[0].response.body).path, '/v1/ping');
 
-  console.log(`import.e2e: ok (${result.endpoints} requests, sent via --line; Swagger 2.0 ok)`);
+  console.log(`import.e2e: ok (${result.endpoints} requests, env + Swagger 2.0, write-once env)`);
 } finally {
   server.close();
   await rm(home, { recursive: true, force: true });

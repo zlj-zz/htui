@@ -41,6 +41,8 @@ export interface ScannedFile {
   /** Path relative to its own root, for display. */
   relPath: string;
   source: 'project' | 'collection';
+  /** For collections: the generated file vs a hand-owned local/case file. */
+  kind?: 'generated' | 'local';
 }
 
 /** Project files under `root`, plus imported collections (outside `root`). */
@@ -50,9 +52,18 @@ export async function listFiles(root: string, local = false): Promise<ScannedFil
   );
 
   const dir = collectionsDir(local);
-  const collections = (await findHttpFiles(dir)).map(
-    (file): ScannedFile => ({ file, relPath: path.relative(dir, file), source: 'collection' }),
-  );
+  const collections = (await findHttpFiles(dir))
+    .filter((file) => path.dirname(file) !== dir) // legacy flat files are obsolete
+    .map((file): ScannedFile => {
+    // <name>/<name>.http is generated; anything else in the collection dir is hand-owned.
+    const generated = path.basename(file) === `${path.basename(path.dirname(file))}.http`;
+    return {
+      file,
+      relPath: path.relative(dir, file),
+      source: 'collection',
+      kind: generated ? 'generated' : 'local',
+    };
+  });
 
   return [...project, ...collections];
 }

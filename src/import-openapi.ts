@@ -1,14 +1,28 @@
 /**
- * Import an OpenAPI 3.x JSON document into a `.http` collection.
- * I/O only — all generation lives in `./openapi`.
+ * Import an OpenAPI 3.x JSON document into a collection. I/O only — generation
+ * lives in `./openapi`.
+ *
+ * Layout per collection (see docs/design-ux.md §6):
+ *   collections/<name>/<name>.http           generated, overwritten on re-import
+ *   collections/<name>/http-client.env.json  hand-owned, only ever merged
  */
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { defaultCollectionName, openapiToHttp, type OpenApiDoc } from './openapi';
 import { parseRequests } from './parse';
-import { collectionsDir, readIndex, sanitizeName, slugify, writeIndex } from './store';
+import {
+  collectionDir,
+  collectionHttp,
+  mergeEnv,
+  readIndex,
+  sanitizeName,
+  slugify,
+  writeIndex,
+} from './store';
 import { swagger2ToOas3, type Swagger2Doc } from './swagger2';
+
+const ENV_NAME = 'default';
 
 export interface ImportOptions {
   specPath: string;
@@ -24,6 +38,9 @@ export interface ImportResult {
   file: string;
   endpoints: number;
   overwritten: boolean;
+  /** Environment variables newly added to the env file (never overwritten). */
+  varsAdded: number;
+  envName: string;
 }
 
 function resolveSpec(specPath: string): string {
@@ -47,8 +64,7 @@ export async function importOpenApi(opts: ImportOptions): Promise<ImportResult> 
     ? sanitizeName(explicitName) // explicit names are validated strictly, never silently rewritten
     : sanitizeName(slugify(defaultCollectionName(doc, specPath)));
   const local = Boolean(opts.local);
-  const dir = collectionsDir(local);
-  const file = path.join(dir, `${name}.http`);
+  const file = collectionHttp(name, local);
 
   const index = await readIndex(local);
   const exists = index[name] !== undefined || (await fileExists(file));
@@ -56,10 +72,21 @@ export async function importOpenApi(opts: ImportOptions): Promise<ImportResult> 
     throw new Error(`collection "${name}" already exists (use --force to overwrite)`);
   }
 
-  const content = openapiToHttp(doc, { source: path.basename(specPath), baseUrl: opts.baseUrl });
-  await mkdir(dir, { recursive: true });
+  const { text, vars } = openapiToHttp(doc, { source: path.basename(specPath), baseUrl: opts.baseUrl });
+  const endpoints = parseRequests(text).length;
 
-  // Atomic-ish write: unique tmp file, rename over the target.
+  await mkdir(collectionDir(name, local), { recursive: true });
+  await writeAtomic(file, text);
+  // The env file is hand-owned: fill missing keys only (an explicit --base-url wins).
+  const varsAdded = await mergeEnv(name, local, ENV_NAME, vars, opts.baseUrl ? ['baseUrl'] : []);
+
+  index[name] = { source: opts.specPath, importedAt: new Date().toISOString(), endpoints };
+  await writeIndex(local, index);
+
+  return { name, file, endpoints, overwritten: exists, varsAdded, envName: ENV_NAME };
+}
+
+async function writeAtomic(file: string, content: string): Promise<void> {
   const tmp = `${file}.${randomUUID()}.tmp`;
   try {
     await writeFile(tmp, content, 'utf8');
@@ -68,12 +95,6 @@ export async function importOpenApi(opts: ImportOptions): Promise<ImportResult> 
   } finally {
     await rm(tmp, { force: true });
   }
-
-  const endpoints = parseRequests(content).length;
-  index[name] = { source: opts.specPath, importedAt: new Date().toISOString(), endpoints };
-  await writeIndex(local, index);
-
-  return { name, file, endpoints, overwritten: exists };
 }
 
 async function readSpec(specPath: string): Promise<OpenApiDoc> {

@@ -288,20 +288,25 @@ interface EmitOptions {
   baseUrl?: string;
 }
 
-export function openapiToHttp(doc: OpenApiDoc, opts: EmitOptions): string {
+/** The generated `.http` text plus the variables the environment must provide. */
+export interface EmittedCollection {
+  text: string;
+  vars: Record<string, string>;
+}
+
+export function openapiToHttp(doc: OpenApiDoc, opts: EmitOptions): EmittedCollection {
   if (doc.swagger && !doc.openapi) throw new Error('Swagger 2.0 is not supported (OpenAPI 3.x only)');
 
   const warnings: string[] = [];
-  const varLines = [`@baseUrl = ${opts.baseUrl ?? serverUrl(doc, warnings)}`];
-  const declared = new Set<string>();
+  // Variables live in the env file, not the generated file: a file-level `@var`
+  // would outrank the env (verified), which would lock the environment.
+  const vars: Record<string, string> = { baseUrl: opts.baseUrl ?? serverUrl(doc, warnings) };
   const blocks: string[] = [];
   const names = new Set<string>();
   let endpoints = 0;
 
   const declare = (name: string, value: string) => {
-    if (declared.has(name)) return;
-    declared.add(name);
-    varLines.push(`@${name} = ${value}`);
+    if (!(name in vars)) vars[name] = value;
   };
 
   for (const route of Object.keys(doc.paths ?? {}).sort()) {
@@ -356,7 +361,7 @@ export function openapiToHttp(doc: OpenApiDoc, opts: EmitOptions): string {
     ...warnings,
   ].join('\n');
 
-  return `${[header, varLines.join('\n'), ...blocks].join('\n\n')}\n`;
+  return { text: `${[header, ...blocks].join('\n\n')}\n`, vars };
 }
 
 /** Title if present, else the file name without extension. Slugified by the caller. */
