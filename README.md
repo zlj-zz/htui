@@ -33,6 +33,7 @@ Keys:
 | any list | `Esc` | clear filter, else go back |
 | any list | `Ctrl-F` | search requests across all files |
 | any list | `Ctrl-O` | import an OpenAPI spec |
+| any list | `Ctrl-V` | edit the highlighted request in `$EDITOR` |
 | any list | `Ctrl-E` | switch environment |
 | requests | `Ctrl-R` | run-chain (prerequisites first) |
 | result | `r` rerun · `b` back · `q` quit | |

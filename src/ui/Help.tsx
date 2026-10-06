@@ -17,6 +17,7 @@ const SECTIONS: Array<{ title: string; keys: Array<[string, string]> }> = [
       ['type', 'filter'],
       ['Ctrl-F', 'search requests across all files'],
       ['Ctrl-O', 'import an OpenAPI spec'],
+      ['Ctrl-V', 'edit the highlighted request in $EDITOR'],
       ['Ctrl-E', 'switch environment'],
       ['Ctrl-R', 'run-chain (run prerequisites first)'],
     ],

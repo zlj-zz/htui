@@ -398,11 +398,13 @@ function App({ initialFile }: { initialFile?: string }) {
         onControl={(key, f) => {
           if (key === 'f') void openSearch('file');
           else if (key === 'o') openImport('file');
+          else if (key === 'v' && f) void edit(f.file, 1);
           else if (key === 'e' && f) void openEnv(f.file, 'file');
         }}
         controls={[
           { key: 'f', label: 'search all' },
           { key: 'o', label: 'import' },
+          { key: 'v', label: 'edit' },
           { key: 'e', label: 'env' },
         ]}
       />
@@ -426,12 +428,14 @@ function App({ initialFile }: { initialFile?: string }) {
         onControl={(key, r) => {
           if (key === 'f') void openSearch('request');
           else if (key === 'o') openImport('request');
+          else if (key === 'v' && r) void edit(file, r.line);
           else if (key === 'r' && r) void send({ file, req: r }, 'request', { chain: true });
           else if (key === 'e') void openEnv(file, 'request');
         }}
         controls={[
           { key: 'f', label: 'search all' },
           { key: 'o', label: 'import' },
+          { key: 'v', label: 'edit' },
           { key: 'r', label: 'chain' },
           { key: 'e', label: 'env' },
         ]}
