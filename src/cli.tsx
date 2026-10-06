@@ -10,6 +10,7 @@ import { runChain, type ChainEntry } from './chain';
 import { runRequest } from './run';
 import { buildWorkspace, listFiles, type IndexedRequest, type ScannedFile } from './workspace';
 import { readEnvNames } from './store';
+import { openEditor } from './editor';
 import { importCommand, listCommand, printHelp, printVersion, removeCommand, sendCommand } from './commands';
 import { SearchableList } from './ui/SearchableList';
 import { ImportForm } from './ui/ImportForm';
@@ -69,7 +70,7 @@ interface Picked {
 }
 
 function App({ initialFile }: { initialFile?: string }) {
-  const { exit } = useApp();
+  const { exit, suspendTerminal } = useApp();
   const [step, setStep] = useState<Step>('file');
   const [files, setFiles] = useState<ScannedFile[] | null>(null);
   const [file, setFile] = useState<string | null>(null);
@@ -127,7 +128,7 @@ function App({ initialFile }: { initialFile?: string }) {
         setRequests(reqs);
       })
       .catch((err: unknown) => fail(err instanceof Error ? err.message : String(err)));
-  }, [file]);
+  }, [file, refresh]);
 
   async function send(target: Picked, from: From, opts?: { chain?: boolean }) {
     setPicked(target);
@@ -155,6 +156,17 @@ function App({ initialFile }: { initialFile?: string }) {
     } catch (err: unknown) {
       fail(err instanceof Error ? err.message : String(err));
     }
+  }
+
+  async function edit(filePath: string, line: number) {
+    try {
+      // Hand the terminal to the editor, then repaint the TUI.
+      await suspendTerminal(() => openEditor(filePath, line));
+    } catch (err: unknown) {
+      fail(err instanceof Error ? err.message : String(err));
+      return;
+    }
+    setRefresh((n) => n + 1); // re-read the file after editing
   }
 
   async function openSearch(from: 'file' | 'request') {
@@ -191,6 +203,7 @@ function App({ initialFile }: { initialFile?: string }) {
         setStep(origin === 'search' ? 'search' : 'request');
       }
       if (input === 'r' && step === 'result' && picked) void send(picked, origin);
+      if (input === 'e' && step === 'result' && picked) void edit(picked.file, picked.req.line);
       if (key.ctrl && input === 'r' && picked) void send(picked, origin, { chain: true });
     },
     { isActive: step === 'result' || step === 'error' },
@@ -374,7 +387,7 @@ function App({ initialFile }: { initialFile?: string }) {
       ) : null}
 
       <Box marginTop={1}>
-        <Text dimColor>[r] rerun [Ctrl-R] chain [b] back [q] quit</Text>
+        <Text dimColor>[r] rerun [e] edit [Ctrl-R] chain [b] back [q] quit</Text>
       </Box>
     </Box>
   );
