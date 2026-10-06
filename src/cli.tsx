@@ -62,11 +62,20 @@ const fileGroup = (f: ScannedFile) => `${f.source === 'collection' ? '~ imported
 const fileHint = (f: ScannedFile) =>
   `${f.source === 'collection' ? `~ ${fileMark(f)}` : ''}${dirOf(f.relPath)}`;
 
-type Step = 'file' | 'request' | 'search' | 'import' | 'env' | 'sending' | 'result' | 'error';
+type Step = 'file' | 'request' | 'search' | 'import' | 'env' | 'sending' | 'result' | 'history' | 'error';
 type From = 'request' | 'search';
 interface Picked {
   file: string;
   req: HttpRequest;
+}
+
+interface HistoryEntry {
+  picked: Picked;
+  method: string;
+  url: string;
+  name: string;
+  ok: boolean;
+  status?: number;
 }
 
 function App({ initialFile }: { initialFile?: string }) {
@@ -87,6 +96,8 @@ function App({ initialFile }: { initialFile?: string }) {
   const [refresh, setRefresh] = useState(0);
   const [result, setResult] = useState<HttpyacRequestResult | null>(null);
   const [prereqs, setPrereqs] = useState<ChainEntry[]>([]);
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [historyReturn, setHistoryReturn] = useState<Step>('result');
   const [error, setError] = useState('');
 
   function fail(message: string) {
@@ -130,6 +141,24 @@ function App({ initialFile }: { initialFile?: string }) {
       .catch((err: unknown) => fail(err instanceof Error ? err.message : String(err)));
   }, [file, refresh]);
 
+  function record(target: Picked, res: HttpyacRequestResult | null) {
+    const ok = hasResponse(res?.response) && !(res?.testResults ?? []).some((t) => t.status === 'ERROR');
+    const entry: HistoryEntry = {
+      picked: target,
+      method: target.req.method,
+      url: target.req.url,
+      name: target.req.name,
+      ok,
+      status: res?.response?.statusCode,
+    };
+    setHistory((h) =>
+      [entry, ...h.filter((e) => !(e.picked.file === target.file && e.picked.req.startLine === target.req.startLine))].slice(
+        0,
+        50,
+      ),
+    );
+  }
+
   async function send(target: Picked, from: From, opts?: { chain?: boolean }) {
     setPicked(target);
     setOrigin(from);
@@ -137,6 +166,7 @@ function App({ initialFile }: { initialFile?: string }) {
     setPrereqs([]);
     setStep('sending');
     try {
+      let res: HttpyacRequestResult | null;
       if (opts?.chain) {
         // A dependent request only works when its prerequisites run in the same
         // httpyac invocation, so run the file slice up to this region.
@@ -148,10 +178,12 @@ function App({ initialFile }: { initialFile?: string }) {
           env: activeEnv,
         });
         setPrereqs(outcome.prerequisites);
-        setResult(outcome.target ?? null);
+        res = outcome.target ?? null;
       } else {
-        setResult(await runRequest(target.file, target.req, activeEnv));
+        res = await runRequest(target.file, target.req, activeEnv);
       }
+      setResult(res);
+      record(target, res);
       setStep('result');
     } catch (err: unknown) {
       fail(err instanceof Error ? err.message : String(err));
@@ -217,6 +249,10 @@ function App({ initialFile }: { initialFile?: string }) {
       if (input === 'v' && step === 'result' && picked) {
         void editEnv(path.join(path.dirname(picked.file), 'http-client.env.json'));
       }
+      if (input === 't' && step === 'result') {
+        setHistoryReturn('result');
+        setStep('history');
+      }
       if (key.ctrl && input === 'r' && picked) void send(picked, origin, { chain: true });
     },
     { isActive: step === 'result' || step === 'error' },
@@ -243,6 +279,21 @@ function App({ initialFile }: { initialFile?: string }) {
           setStep(importReturn);
           setRefresh((n) => n + 1);
         }}
+      />
+    );
+  }
+
+  if (step === 'history') {
+    return (
+      <SearchableList
+        header={`History (${history.length})  ·  env:${activeEnv}`}
+        placeholder="filter history…"
+        items={history}
+        keyOf={(e) => `${e.method} ${e.url} ${e.name}`}
+        labelOf={(e) => `${e.method} ${e.url}`}
+        hintOf={(e) => `${e.ok ? '✓' : '✗'} ${e.status ?? '?'}  ${e.name}`}
+        onSelect={(e) => void send(e.picked, 'request')}
+        onBack={() => setStep(historyReturn)}
       />
     );
   }
@@ -404,7 +455,7 @@ function App({ initialFile }: { initialFile?: string }) {
       ) : null}
 
       <Box marginTop={1}>
-        <Text dimColor>[r] rerun [e] edit [v] vars [Ctrl-R] chain [b] back [q] quit</Text>
+        <Text dimColor>[r] rerun [e] edit [v] vars [t] history [Ctrl-R] chain [b] back [q] quit</Text>
       </Box>
     </Box>
   );
