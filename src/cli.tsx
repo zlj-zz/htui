@@ -7,6 +7,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import path from 'node:path';
 import { parseRequests, type HttpRequest } from './parse';
+import { hasResponse, testIcon, type TestResult } from './result';
 import { buildWorkspace, listFiles, type IndexedRequest, type ScannedFile } from './workspace';
 import { importCommand, listCommand, printHelp, printVersion, removeCommand } from './commands';
 import { SearchableList } from './ui/SearchableList';
@@ -26,7 +27,7 @@ interface HttpyacRequestResult {
   name?: string;
   response?: HttpyacResponse;
   duration?: number;
-  testResults?: Array<{ message?: string; status?: boolean }>;
+  testResults?: TestResult[];
 }
 
 /** Delegate execution to httpyac and read its documented JSON contract. */
@@ -64,6 +65,15 @@ function statusColor(code?: number): string | undefined {
   if (code < 300) return 'green';
   if (code < 400) return 'yellow';
   return 'red';
+}
+
+function TestLine({ test }: { test: TestResult }) {
+  const { icon, color } = testIcon(test.status);
+  return (
+    <Text color={color}>
+      {icon} {test.message ?? ''}
+    </Text>
+  );
 }
 
 function bodyText(body: unknown): string {
@@ -280,28 +290,46 @@ function App({ initialFile }: { initialFile?: string }) {
   }
 
   const response = result?.response;
+  // A response without a status code means the request never completed.
+  const completed = hasResponse(response);
+  const tests = result?.testResults ?? [];
+
   return (
     <Box flexDirection="column">
-      <Text color={statusColor(response?.statusCode)}>
-        {picked?.req.method} {picked?.req.url} → {response?.statusCode ?? '?'} {response?.statusMessage ?? ''}
+      <Text color={completed ? statusColor(response?.statusCode) : 'red'}>
+        {picked?.req.method} {picked?.req.url} →{' '}
+        {completed ? `${response?.statusCode} ${response?.statusMessage ?? ''}` : 'failed'}
         {result?.duration != null ? `  ${Math.round(result.duration)}ms` : ''}
       </Text>
       {picked ? <Text dimColor>{relOf(picked.file)}</Text> : null}
-      {response?.headers ? (
-        <Text dimColor>{clipBody(JSON.stringify(response.headers, null, 2))}</Text>
-      ) : null}
-      <Box marginTop={1}>
-        <Text>{clipBody(bodyText(response?.body))}</Text>
-      </Box>
-      {result?.testResults?.length ? (
+
+      {completed ? (
+        <>
+          {response?.headers ? (
+            <Text dimColor>{clipBody(JSON.stringify(response.headers, null, 2))}</Text>
+          ) : null}
+          <Box marginTop={1}>
+            <Text>{clipBody(bodyText(response?.body))}</Text>
+          </Box>
+        </>
+      ) : (
         <Box marginTop={1} flexDirection="column">
-          {result.testResults.map((t, i) => (
-            <Text key={i} color={t.status ? 'green' : 'red'}>
-              {t.status ? '✓' : '✗'} {t.message ?? ''}
-            </Text>
+          {tests.length === 0 ? (
+            <Text color="red">no response</Text>
+          ) : (
+            tests.map((t, i) => <TestLine key={i} test={t} />)
+          )}
+        </Box>
+      )}
+
+      {completed && tests.length ? (
+        <Box marginTop={1} flexDirection="column">
+          {tests.map((t, i) => (
+            <TestLine key={i} test={t} />
           ))}
         </Box>
       ) : null}
+
       <Box marginTop={1}>
         <Text dimColor>[r] rerun [b] back [q] quit</Text>
       </Box>
