@@ -7,8 +7,10 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import path from 'node:path';
 import { parseRequests, type HttpRequest } from './parse';
-import { buildWorkspace, findHttpFiles, type IndexedRequest } from './workspace';
+import { buildWorkspace, listFiles, type IndexedRequest, type ScannedFile } from './workspace';
+import { importCommand, listCommand, printHelp, printVersion, removeCommand } from './commands';
 import { SearchableList } from './ui/SearchableList';
+import { ImportForm } from './ui/ImportForm';
 
 const execFileAsync = promisify(execFile);
 const MAX_BODY_LINES = 200;
@@ -87,7 +89,11 @@ const dirOf = (p: string) => {
   return d === '.' ? './' : `${d}/`;
 };
 
-type Step = 'file' | 'request' | 'search' | 'sending' | 'result' | 'error';
+// Imported collections live outside the project, so label them distinctly.
+const fileGroup = (f: ScannedFile) => `${f.source === 'collection' ? '~ imported  ' : ''}${dirOf(f.relPath)}`;
+const fileHint = (f: ScannedFile) => `${f.source === 'collection' ? '~ ' : ''}${dirOf(f.relPath)}`;
+
+type Step = 'file' | 'request' | 'search' | 'import' | 'sending' | 'result' | 'error';
 type From = 'request' | 'search';
 interface Picked {
   file: string;
@@ -97,13 +103,15 @@ interface Picked {
 function App({ initialFile }: { initialFile?: string }) {
   const { exit } = useApp();
   const [step, setStep] = useState<Step>('file');
-  const [files, setFiles] = useState<string[] | null>(null);
+  const [files, setFiles] = useState<ScannedFile[] | null>(null);
   const [file, setFile] = useState<string | null>(null);
   const [requests, setRequests] = useState<HttpRequest[] | null>(null);
   const [workspace, setWorkspace] = useState<IndexedRequest[] | null>(null);
   const [picked, setPicked] = useState<Picked | null>(null);
   const [origin, setOrigin] = useState<From>('request');
   const [searchFrom, setSearchFrom] = useState<'file' | 'request'>('request');
+  const [importReturn, setImportReturn] = useState<'file' | 'request'>('file');
+  const [refresh, setRefresh] = useState(0);
   const [result, setResult] = useState<HttpyacRequestResult | null>(null);
   const [error, setError] = useState('');
 
@@ -114,7 +122,7 @@ function App({ initialFile }: { initialFile?: string }) {
 
   // initial scan
   useEffect(() => {
-    findHttpFiles(process.cwd())
+    listFiles(process.cwd())
       .then((found) => {
         if (found.length === 0) {
           fail(`No .http / .rest files found under ${process.cwd()}`);
@@ -125,12 +133,12 @@ function App({ initialFile }: { initialFile?: string }) {
           setFile(path.resolve(initialFile));
           setStep('request');
         } else if (found.length === 1) {
-          setFile(found[0]);
+          setFile(found[0].file);
           setStep('request');
         }
       })
       .catch((err: unknown) => fail(err instanceof Error ? err.message : String(err)));
-  }, [initialFile]);
+  }, [initialFile, refresh]);
 
   // parse requests when a file is chosen
   useEffect(() => {
@@ -172,6 +180,11 @@ function App({ initialFile }: { initialFile?: string }) {
     }
   }
 
+  function openImport(from: 'file' | 'request') {
+    setImportReturn(from);
+    setStep('import');
+  }
+
   useInput(
     (input) => {
       if (input === 'q') exit();
@@ -194,6 +207,18 @@ function App({ initialFile }: { initialFile?: string }) {
     );
   }
 
+  if (step === 'import') {
+    return (
+      <ImportForm
+        onCancel={() => setStep(importReturn)}
+        onDone={() => {
+          setStep(importReturn);
+          setRefresh((n) => n + 1);
+        }}
+      />
+    );
+  }
+
   if (step === 'file') {
     if (!files) return <Spinner label="Scanning for .http / .rest files…" />;
     return (
@@ -201,15 +226,16 @@ function App({ initialFile }: { initialFile?: string }) {
         header={`Select a file — ${process.cwd()}`}
         placeholder="filter files…"
         items={files}
-        keyOf={(f) => relOf(f)}
-        labelOf={(f) => path.basename(f)}
-        hintOf={(f) => dirOf(relOf(f))}
-        groupOf={(f) => dirOf(relOf(f))}
+        keyOf={(f) => `${f.source} ${f.relPath}`}
+        labelOf={(f) => path.basename(f.file)}
+        hintOf={fileHint}
+        groupOf={fileGroup}
         onSelect={(f) => {
-          setFile(f);
+          setFile(f.file);
           setStep('request');
         }}
         onSearchKey={() => void openSearch('file')}
+        onImportKey={() => openImport('file')}
       />
     );
   }
@@ -228,6 +254,7 @@ function App({ initialFile }: { initialFile?: string }) {
         onSelect={(r) => void send({ file, req: r }, 'request')}
         onBack={() => setStep('file')}
         onSearchKey={() => void openSearch('request')}
+        onImportKey={() => openImport('request')}
       />
     );
   }
@@ -282,11 +309,39 @@ function App({ initialFile }: { initialFile?: string }) {
   );
 }
 
-if (!process.stdin.isTTY) {
-  process.stderr.write(
-    'htui: needs an interactive terminal (TTY). Non-interactive: `httpyac send <file> --json`.\n',
-  );
-  process.exit(1);
+function runTui(initialFile?: string) {
+  if (!process.stdin.isTTY) {
+    process.stderr.write(
+      'htui: needs an interactive terminal (TTY). For scripts/agents use `htui import|list|remove`, or `httpyac send` directly.\n',
+    );
+    process.exitCode = 1;
+    return;
+  }
+  render(<App initialFile={initialFile} />);
 }
 
-render(<App initialFile={process.argv[2]} />);
+const [command, ...args] = process.argv.slice(2);
+switch (command) {
+  case 'import':
+    process.exitCode = await importCommand(args);
+    break;
+  case 'list':
+    process.exitCode = await listCommand(args);
+    break;
+  case 'remove':
+    process.exitCode = await removeCommand(args);
+    break;
+  case 'help':
+  case '--help':
+  case '-h':
+    printHelp();
+    break;
+  case 'version':
+  case '--version':
+  case '-V':
+    printVersion();
+    break;
+  default:
+    // bare `htui` or `htui <file.http>`
+    runTui(command);
+}

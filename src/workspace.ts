@@ -1,11 +1,12 @@
 /**
  * Workspace scanning + (lazy) request index.
- * `findHttpFiles` is used on every launch; `buildWorkspace` only when the user
- * opens cross-file search.
+ * `listFiles` runs on every launch; `buildWorkspace` only when the user opens
+ * cross-file search.
  */
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { parseRequests, type HttpRequest } from './parse';
+import { collectionsDir } from './store';
 
 const HTTP_FILE = /\.(http|rest)$/i;
 const SKIP_DIR = new Set(['node_modules', '.git', 'dist']);
@@ -27,29 +28,51 @@ async function walk(dir: string, depth: number, out: string[]): Promise<void> {
 }
 
 /** Sorted so grouping/ranking is deterministic (readdir order is not). */
-export async function findHttpFiles(root: string): Promise<string[]> {
+async function findHttpFiles(root: string): Promise<string[]> {
   const out: string[] = [];
   await walk(root, 0, out);
   out.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
   return out;
 }
 
+export interface ScannedFile {
+  /** Absolute path. */
+  file: string;
+  /** Path relative to its own root, for display. */
+  relPath: string;
+  source: 'project' | 'collection';
+}
+
+/** Project files under `root`, plus imported collections (outside `root`). */
+export async function listFiles(root: string, local = false): Promise<ScannedFile[]> {
+  const project = (await findHttpFiles(root)).map(
+    (file): ScannedFile => ({ file, relPath: path.relative(root, file), source: 'project' }),
+  );
+
+  const dir = collectionsDir(local);
+  const collections = (await findHttpFiles(dir)).map(
+    (file): ScannedFile => ({ file, relPath: path.relative(dir, file), source: 'collection' }),
+  );
+
+  return [...project, ...collections];
+}
+
 export interface IndexedRequest extends HttpRequest {
   /** Absolute path, so a search hit can be sent without knowing the file. */
   file: string;
-  /** Path relative to the workspace root, for display. */
+  /** Display path (`~/…` for imported collections). */
   relPath: string;
 }
 
-/** Parse every .http/.rest under `root` into a flat, sendable request list. */
-export async function buildWorkspace(root: string): Promise<IndexedRequest[]> {
-  const files = await findHttpFiles(root);
+/** Parse every .http/.rest under `root` AND the collection store. */
+export async function buildWorkspace(root: string, local = false): Promise<IndexedRequest[]> {
+  const files = await listFiles(root, local);
   const perFile = await Promise.all(
-    files.map(async (file): Promise<IndexedRequest[]> => {
+    files.map(async ({ file, relPath, source }): Promise<IndexedRequest[]> => {
       try {
         const content = await readFile(file, 'utf8');
-        const relPath = path.relative(root, file);
-        return parseRequests(content).map((req) => ({ ...req, file, relPath }));
+        const display = source === 'collection' ? `~/${relPath}` : relPath;
+        return parseRequests(content).map((req) => ({ ...req, file, relPath: display }));
       } catch {
         return [];
       }

@@ -17,6 +17,8 @@ export interface SearchableListProps<T> {
   onBack?: () => void;
   /** Ctrl-F — reserved so it never lands in the filter. */
   onSearchKey?: () => void;
+  /** Ctrl-O — reserved import entry. */
+  onImportKey?: () => void;
 }
 
 function Row<T>({ entry, selected, hint }: { entry: DisplayEntry<T>; selected: boolean; hint?: string }) {
@@ -48,6 +50,7 @@ export function SearchableList<T>({
   onSelect,
   onBack,
   onSearchKey,
+  onImportKey,
 }: SearchableListProps<T>) {
   const [query, setQuery] = useState('');
   const [cursor, setCursor] = useState(0);
@@ -88,6 +91,10 @@ export function SearchableList<T>({
         onSearchKey?.();
         return;
       }
+      if (key.ctrl && input === 'o') {
+        onImportKey?.();
+        return;
+      }
       if (key.ctrl || key.meta) return;
       if (key.backspace || key.delete) {
         setQuery((q) => q.slice(0, -1));
@@ -126,6 +133,7 @@ export function SearchableList<T>({
         {start > 0 ? ' ↑' : ''}
         {end < filtered.length ? ' ↓' : ''}
         {onSearchKey ? '   [Ctrl-F] search all' : ''}
+        {onImportKey ? '   [Ctrl-O] import' : ''}
       </Text>
     </Box>
   );
