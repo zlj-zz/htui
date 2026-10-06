@@ -274,7 +274,8 @@ function App({ initialFile }: { initialFile?: string }) {
         setError('');
         setStep(origin === 'search' ? 'search' : 'request');
       }
-      if (input === 'r' && step === 'result' && picked) void send(picked, origin);
+      if (input === 'r' && picked) void send(picked, origin);
+      if (input === 'R' && picked) void send(picked, origin, { chain: true });
       if (input === 'e' && step === 'result' && picked) void edit(picked.file, picked.req.line);
       if (input === 'v' && step === 'result' && picked) {
         void editEnv(path.join(path.dirname(picked.file), 'http-client.env.json'));
@@ -301,7 +302,6 @@ function App({ initialFile }: { initialFile?: string }) {
       }
       if (input === 'w' && step === 'result' && result) void saveBody(result);
       if (input === '?') openHelp(step);
-      if (key.ctrl && input === 'r' && picked) void send(picked, origin, { chain: true });
     },
     { isActive: step === 'result' || step === 'error' },
   );
@@ -319,7 +319,7 @@ function App({ initialFile }: { initialFile?: string }) {
         <Text color="red">✗ {error}</Text>
         <Text dimColor>
           {file ? '[b] back  ' : ''}
-          {requests && requests.length > 1 ? '[Ctrl-R] run chain (prerequisites first)  ' : ''}
+          {picked ? '[r] retry  [R] chain  ' : ''}
           [?] help  [q] quit
         </Text>
       </Box>
@@ -370,10 +370,10 @@ function App({ initialFile }: { initialFile?: string }) {
           setActiveEnv(n);
           setStep(envReturn);
         }}
-        onControl={(key) => {
-          if (key === 'v') void editEnv(envFile);
+        onCommand={(key) => {
+          if (key === 'e') void editEnv(envFile);
         }}
-        controls={[{ key: 'v', label: 'edit file' }]}
+        controls={[{ key: 'e', label: 'edit file' }]}
         onBack={() => setStep(envReturn)}
       />
     );
@@ -395,17 +395,19 @@ function App({ initialFile }: { initialFile?: string }) {
           setFile(f.file);
           setStep('request');
         }}
-        onControl={(key, f) => {
+        onCommand={(key, f) => {
+          if (key === 'e' && f) void edit(f.file, 1);
+          else if (key === 'i') openImport('file');
+          else if (key === 's' && f) void openEnv(f.file, 'file');
+        }}
+        onControl={(key) => {
           if (key === 'f') void openSearch('file');
-          else if (key === 'o') openImport('file');
-          else if (key === 'v' && f) void edit(f.file, 1);
-          else if (key === 'e' && f) void openEnv(f.file, 'file');
         }}
         controls={[
-          { key: 'f', label: 'search all' },
-          { key: 'o', label: 'import' },
-          { key: 'v', label: 'edit' },
-          { key: 'e', label: 'env' },
+          { key: 'e', label: 'edit' },
+          { key: 'i', label: 'import' },
+          { key: 's', label: 'env' },
+          { key: 'Ctrl-F', label: 'search' },
         ]}
       />
     );
@@ -425,19 +427,21 @@ function App({ initialFile }: { initialFile?: string }) {
         hintOf={(r) => (r.name !== 'default' ? r.name : undefined)}
         onSelect={(r) => void send({ file, req: r }, 'request')}
         onBack={() => setStep('file')}
-        onControl={(key, r) => {
-          if (key === 'f') void openSearch('request');
-          else if (key === 'o') openImport('request');
-          else if (key === 'v' && r) void edit(file, r.line);
+        onCommand={(key, r) => {
+          if (key === 'e' && r) void edit(file, r.line);
+          else if (key === 'i') openImport('request');
           else if (key === 'r' && r) void send({ file, req: r }, 'request', { chain: true });
-          else if (key === 'e') void openEnv(file, 'request');
+          else if (key === 's') void openEnv(file, 'request');
+        }}
+        onControl={(key) => {
+          if (key === 'f') void openSearch('request');
         }}
         controls={[
-          { key: 'f', label: 'search all' },
-          { key: 'o', label: 'import' },
-          { key: 'v', label: 'edit' },
+          { key: 'e', label: 'edit' },
+          { key: 'i', label: 'import' },
           { key: 'r', label: 'chain' },
-          { key: 'e', label: 'env' },
+          { key: 's', label: 'env' },
+          { key: 'Ctrl-F', label: 'search' },
         ]}
       />
     );
@@ -526,7 +530,7 @@ function App({ initialFile }: { initialFile?: string }) {
 
       {notice ? <Text color="cyan">{notice}</Text> : null}
       <Box marginTop={1}>
-        <Text dimColor>[r] rerun [e] edit [v] vars [t] history [y] copy [Y] curl [w] save [h] headers [?] help [b] back [q] quit</Text>
+        <Text dimColor>[r] rerun [R] chain [e] edit [v] vars [t] history [y] copy [Y] curl [w] save [h] headers [?] help [b] back [q] quit</Text>
       </Box>
     </Box>
   );

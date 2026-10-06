@@ -2,8 +2,8 @@ import { Box, Text, useInput } from 'ink';
 import { useEffect, useMemo, useState } from 'react';
 import { buildEntries, filterAndRank, viewport, type DisplayEntry } from '../rows';
 
-export interface ControlHint {
-  /** Lowercase letter, triggered as Ctrl-<key>. */
+export interface KeyHint {
+  /** Shown literally, e.g. `e`, `Ctrl-F`, `/`. */
   key: string;
   label: string;
 }
@@ -19,14 +19,16 @@ export interface SearchableListProps<T> {
   maxVisible?: number;
   isActive?: boolean;
   onSelect: (t: T) => void;
-  /** Esc with an empty query. */
+  /** Esc with no filter. */
   onBack?: () => void;
-  /** Reserved Ctrl-<key> actions (they never land in the filter). */
+  /** Plain keys in normal mode (filter is entered with `/`). */
+  onCommand?: (key: string, item: T | undefined) => void;
+  /** Ctrl-<key> chords, reserved everywhere. */
   onControl?: (key: string, item: T | undefined) => void;
-  /** `?` when the filter is empty. */
+  /** `?` in normal mode. */
   onHelp?: () => void;
-  /** Footer hints for the reserved keys (display only). */
-  controls?: ControlHint[];
+  /** Footer hints (display only). */
+  controls?: KeyHint[];
 }
 
 function Row<T>({ entry, selected, hint }: { entry: DisplayEntry<T>; selected: boolean; hint?: string }) {
@@ -42,8 +44,9 @@ function Row<T>({ entry, selected, hint }: { entry: DisplayEntry<T>; selected: b
 }
 
 /**
- * Single-keyboard list: type to filter, ↑/↓ to move, Enter to select.
- * Only one instance is mounted per step, so a single `useInput` is safe.
+ * Vim-like list: normal mode takes plain command keys, `/` enters filtering
+ * (type to narrow, Enter to keep, Esc to clear). One instance is mounted per
+ * step, so a single `useInput` is safe.
  */
 export function SearchableList<T>({
   items,
@@ -52,16 +55,18 @@ export function SearchableList<T>({
   hintOf,
   groupOf,
   header,
-  placeholder = 'type to filter',
+  placeholder = 'press / to filter',
   maxVisible,
   isActive = true,
   onSelect,
   onBack,
+  onCommand,
   onControl,
   onHelp,
   controls,
 }: SearchableListProps<T>) {
   const [query, setQuery] = useState('');
+  const [filtering, setFiltering] = useState(false);
   const [cursor, setCursor] = useState(0);
 
   const filtered = useMemo(() => filterAndRank(query, items, keyOf), [query, items, keyOf]);
@@ -78,38 +83,33 @@ export function SearchableList<T>({
 
   useInput(
     (input, key) => {
-      if (key.upArrow) {
-        setCursor((c) => Math.max(0, c - 1));
+      if (key.ctrl && input.length === 1) {
+        onControl?.(input.toLowerCase(), selected);
         return;
       }
-      if (key.downArrow) {
-        setCursor((c) => Math.min(filtered.length - 1, c + 1));
+      if (key.meta) return;
+
+      if (filtering) {
+        if (key.return) setFiltering(false); // keep the filter
+        else if (key.escape) {
+          setQuery('');
+          setFiltering(false);
+        } else if (key.backspace || key.delete) setQuery((q) => q.slice(0, -1));
+        else if (input) setQuery((q) => q + input.replace(/[\r\n\t]/g, ''));
         return;
       }
-      if (key.return) {
-        if (selected) onSelect(selected); // no-op on empty match set
-        return;
-      }
-      if (key.escape) {
+
+      // normal mode
+      if (key.upArrow) setCursor((c) => Math.max(0, c - 1));
+      else if (key.downArrow) setCursor((c) => Math.min(filtered.length - 1, c + 1));
+      else if (key.return) {
+        if (selected) onSelect(selected); // no-op on an empty match set
+      } else if (key.escape) {
         if (query) setQuery('');
         else onBack?.();
-        return;
-      }
-      if (key.ctrl && input.length === 1) {
-        onControl?.(input.toLowerCase(), selected); // reserved; never filtered
-        return;
-      }
-      if (key.ctrl || key.meta) return;
-      // `?` is help when nothing is being typed (to type a literal ? start elsewhere).
-      if (input === '?' && !query) {
-        onHelp?.();
-        return;
-      }
-      if (key.backspace || key.delete) {
-        setQuery((q) => q.slice(0, -1));
-        return;
-      }
-      if (input) setQuery((q) => q + input.replace(/[\r\n\t]/g, '')); // paste arrives as one multi-char input
+      } else if (input === '/') setFiltering(true);
+      else if (input === '?') onHelp?.();
+      else if (input.length === 1) onCommand?.(input, selected);
     },
     { isActive },
   );
@@ -118,8 +118,17 @@ export function SearchableList<T>({
     <Box flexDirection="column">
       {header ? <Text bold>{header}</Text> : null}
       <Text>
-        <Text color="cyan">❯ </Text>
-        {query ? <Text>{query}</Text> : <Text dimColor>{placeholder}</Text>}
+        <Text color="cyan">{filtering ? '❯ ' : '/ '}</Text>
+        {filtering ? (
+          <Text>
+            {query}
+            <Text color="cyan">▏</Text>
+          </Text>
+        ) : query ? (
+          <Text>{query}</Text>
+        ) : (
+          <Text dimColor>{placeholder}</Text>
+        )}
       </Text>
       {filtered.length === 0 ? <Text dimColor>{'  (no matches)'}</Text> : null}
       {entries.map((entry, i) =>
@@ -136,8 +145,9 @@ export function SearchableList<T>({
         {filtered.length === items.length ? `${items.length}` : `${filtered.length}/${items.length}`}
         {start > 0 ? ' ↑' : ''}
         {end < filtered.length ? ' ↓' : ''}
-        {controls?.map((c) => `   [Ctrl-${c.key.toUpperCase()}] ${c.label}`).join('')}
-        {onHelp ? '    ?  help' : ''}
+        {filtering ? '' : `   [/] filter`}
+        {filtering ? '' : controls?.map((c) => `   [${c.key}] ${c.label}`).join('')}
+        {filtering ? '' : onHelp ? '   [?] help' : ''}
       </Text>
     </Box>
   );

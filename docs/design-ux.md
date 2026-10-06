@@ -111,7 +111,7 @@ Requests ─e→ $EDITOR 改 ─(返回)→ 自动重读该文件 → Enter 重�
 2. **切片要 region 的「结束行」**：`[region 起始 .. 下一 `###` 之前]`，且不能把 body 里的 `###` 当分隔符 → **`parse.ts` 必须产出 region 的 start/end 与 `# @name`**（影响面里不能再写"不动 parse.ts"）。
 3. **前置副作用**：`Ctrl-R` 是**显式动作**（用户已知情），故不加二次确认；`--bail` 已开启让失败即停；结果页列出每个前置的 ✓/✗ 与错误（即「链中第 k 步失败」渲染）。
 4. **临时文件放源文件同目录 + 点号前缀**（如 `.<name>.chain.<uuid>.tmp.http`）：cwd 会破坏 httpyac 的 env/config 解析；非点号会被 `listFiles` 当成集合列出（`workspace.ts:20` 跳过点号项）。
-5. **默认语义（实现时修正）**：`Enter` = **单发**（快、无副作用）；`Ctrl-R` = **显式 run-chain**。**不采用「非首 region 自动 chain」** —— 那会让生成集合里第 N 个接口去跑前面 N-1 个请求，副作用不可接受。单发失败且文件含多个 region 时，错误页提示 `[Ctrl-R] run chain`。
+5. **默认语义**：`Enter` = **单发**（快、无副作用）；`r`（列表）/ `R`（结果页）= run-chain。**不采用「非首 region 自动 chain」** —— 那会让生成集合里第 N 个接口去跑前面 N-1 个请求。
 
 **其它已定论**：
 - 用 `# @name x` + `{{x}}` / `{{xResponse}}` 就能引用前置响应 —— 但**仍需同一次调用内**，所以 run-chain 依然必要。
@@ -141,7 +141,7 @@ htui 是 **inline（非 alt-screen）**。因此：
 
 ```
 htui · /Users/haha/haha-projects/crm                      env:dev
-❯ filter files…                                   12/12 · ↑↓
+/ press / to filter                               12/12 · ↑↓
   project/api/
     users.http                                    8 reqs
     orders.http                                   3 reqs
@@ -149,7 +149,7 @@ htui · /Users/haha/haha-projects/crm                      env:dev
     crm-api.http              ⟳ generated  204 reqs   ⚠ no env
     crm-api.local.http        ✎ local        4 reqs
 ──────────────────────────────────────────────────────────────
-12 files · 215 requests     ? help · Ctrl-F search · Ctrl-O import
+12 files · 215 requests     / filter · e edit · i import · ? help
 ```
 - 标记 `⟳ generated` / `✎ local` / `⚠ no env` → **`ScannedFile` 需增加 `kind` 字段**（`workspace.ts:38`）。
 
@@ -157,11 +157,11 @@ htui · /Users/haha/haha-projects/crm                      env:dev
 
 ```
 htui · ~/crm/crm-api.http  ⟳ generated                    env:dev
-❯ filter requests…                                204/204
+/ press / to filter                               204/204
   POST /v1/account/create            · accountAccountCreate
 ❯ GET  /v1/account/{{id}}            · accountAccountGet       200 ✓
 ──────────────────────────────────────────────────────────────
-204 requests   Enter send/run · Ctrl-R chain · e edit · c case · Esc
+204 requests   Enter send · e edit · r chain · s env · i import · Esc
 ```
 - 徽标按 region 名索引（不是行号）。
 
@@ -182,10 +182,10 @@ r rerun · t history · e edit · y copy · / search · b back · q quit
 - 长响应只渲染可视窗口；`f` 折叠、`w` 换行开关、`/` 在 body 内搜索（**进入输入模式**，见 §5）。
 - **无响应**：直接错误块（§7），不再显示 `?`。
 
-### 4.7 Env 选择器（Ctrl-E）
-列当前文件目录可见的 env（httpyac 从文件目录向上找）；`Enter` 选中 → 会话状态 + 页脚常显；`v` 编辑 env 文件。
+### 4.7 Env 选择器（s）
+列当前文件目录可见的 env（httpyac 从文件目录向上找）；`Enter` 选中 → 会话状态 + 页眉常显；`e` 编辑 env 文件。
 
-### 4.8 Import（Ctrl-O）
+### 4.8 Import（i）
 spec 选择器（复用 `SearchableList` 列 `*.json/*.yaml`）→ 命名 → 覆盖确认；**成功后产出 env（write-once）**；Files 高亮新集合。
 > overlay 化：叠在底屏上，取消后**保留过滤/光标**。
 
@@ -194,31 +194,32 @@ spec 选择器（复用 `SearchableList` 列 `*.json/*.yaml`）→ 命名 → �
 
 ---
 
-## 5. 键位语法（含模式）
+## 5. 键位语法（vim 式两模式）
 
-**规则**：**普通模式**下可打印字符 = 过滤；**输入模式**（filter / body 搜索 / 表单）由显式状态持有，`Esc` 退出。
+**规则**：**明文键 = 命令**；过滤是**显式模式**，`/` 进入 → 打字 → `Enter` 保留 / `Esc` 清空退出。`Ctrl-*` 只留给跨屏全局动作。
 
 | 键 | 归属 | 动作 |
 |---|---|---|
 | `↑` `↓` `PgUp/PgDn` | 列表 | 移动 |
-| `Enter` | 列表 | 主操作：open / send（**非首 region 时默认 run-chain**） |
-| `Esc` | 全局 | 输入模式→退出；否则返回 |
+| `/` | 列表 | **进入过滤模式** |
+| `Enter` | 列表 | 主操作：open / send |
+| `Esc` | 全局 | 过滤中→退出；有过滤→清空；否则返回 |
+| `e` | 列表/结果 | `$EDITOR` 打开当前请求（到该行）—— **不必先发一次** |
+| `i` | 列表 | 导入 OpenAPI |
+| `s` | 列表 | 环境选择器 |
+| `r` | Requests | run-chain（前置 + 目标） |
 | `Ctrl-F` | 全局 | 跨文件搜索 |
-| `Ctrl-O` | 全局 | 导入 |
-| `Ctrl-E` | 全局 | 环境选择器 |
-| `Ctrl-R` | Requests | 强制 run-chain |
+| `v` `t` `y` `Y` `w` `h` | Result | 变量文件 / 历史 / 复制体 / curl / 存文件 / headers 折叠 |
+| `r` / `R` | Result | 重发 / 以 chain 重发 |
+| `c` | Requests | 建 case（待办） |
 | `?` | 全局 | 帮助 |
-| `e` / `v` | Requests/Result | `$EDITOR` 打开请求 / 变量文件 |
-| `c` | Requests | 建 case |
-| `r` / `t` | Result | 重发 / 历史 |
-| `y` / `Y` / `w` | Result | 复制体 / curl / 存文件 |
-| `h` | Result | headers 折叠 |
-| `/` | Result | **进入** body 搜索模式 |
 | `q` | 全局 | 退出 |
 
-**必须改 `SearchableList`**：它写死 `ctrl-f`/`ctrl-o` 并 `if (key.ctrl || key.meta) return`（`ui/SearchableList.tsx:90-98`）→ Ctrl-E/Ctrl-R/Ctrl-T 在它挂载时**无法存在**。方案：把保留键交给上层（props 回调 / `isActive` 网关），本组件只负责"可打印字符进过滤"。
+**模式定义**：`normal`（明文命令）、`filter`（`/` 进入）、`search-body`（Result 内，待办）、`form`（Import）。互斥，任一时刻只有一个输入处理器挂载。
 
-**模式定义**：`filter`（列表过滤）、`search-body`（Result 内）、`form`（Import）。三者互斥，任一时刻只有 `SearchableList` 或 `TextInput` 或 body 搜索挂载。
+**实现**（`src/ui/SearchableList.tsx`）：`onCommand(key, item)` 受理明文命令，`onControl(key, item)` 受理 Ctrl 弦；过滤态由组件内部持有（`filtering`/`query`），`Enter` 保留、`Esc` 清空退出。
+
+> **更正**：v1 曾设想“可打印字符 = 过滤 + Ctrl 动作”，实测不好用：动作藏在 Ctrl 里，且编辑只能从 Result（先发一次）。已按需求改为两模式——明文键是命令。
 
 ---
 

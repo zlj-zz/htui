@@ -5,6 +5,7 @@ const SECTIONS: Array<{ title: string; keys: Array<[string, string]> }> = [
     title: 'Anywhere',
     keys: [
       ['↑ ↓', 'move'],
+      ['/', 'filter the list'],
       ['Enter', 'open / send'],
       ['Esc', 'clear filter, else back'],
       ['?', 'this help'],
@@ -14,12 +15,11 @@ const SECTIONS: Array<{ title: string; keys: Array<[string, string]> }> = [
   {
     title: 'Lists',
     keys: [
-      ['type', 'filter'],
+      ['e', 'edit the highlighted request in $EDITOR'],
+      ['i', 'import an OpenAPI spec'],
+      ['s', 'switch environment'],
+      ['r', 'run-chain (run prerequisites first)'],
       ['Ctrl-F', 'search requests across all files'],
-      ['Ctrl-O', 'import an OpenAPI spec'],
-      ['Ctrl-V', 'edit the highlighted request in $EDITOR'],
-      ['Ctrl-E', 'switch environment'],
-      ['Ctrl-R', 'run-chain (run prerequisites first)'],
     ],
   },
   {
@@ -29,6 +29,9 @@ const SECTIONS: Array<{ title: string; keys: Array<[string, string]> }> = [
       ['e', 'edit the request in $EDITOR'],
       ['v', 'edit the variables file'],
       ['t', 'session history'],
+      ['y / Y', 'copy body / copy as curl'],
+      ['w', 'save the body to a file'],
+      ['h', 'fold headers'],
       ['b', 'back'],
     ],
   },

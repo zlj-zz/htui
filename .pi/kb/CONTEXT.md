@@ -41,7 +41,7 @@ npm run typecheck && npm run build  # -> dist/cli.js
 - **零运行时依赖**（唯一外部依赖是全局 `httpyac`）。
 - **生成物 ≠ 手工物**：`collections/<name>/{<name>.http（可重导）, http-client.env.json（write-once）, <name>.local.http（永不覆盖）}`。
 - 编辑器交接用 Ink 官方 **`suspendTerminal()`**（非手工 raw-mode）。
-- 键位语法：**可打印字符 = 过滤输入**；动作走修饰键（`Ctrl-F/O/E/R`）+ `?`（过滤为空时）。Result 页无过滤框，故明文 `r/e/v/t/y/Y/w/h`。
+- 键位语法：**vim 式两模式** —— 明文键 = 命令；`/` 进过滤（`Enter` 保留过滤、`Esc` 清空退出）；`Ctrl-F` = 跨文件搜索。
 - 身份用 **region 名**（行号会因编辑失效）。
 - 失败判定：`hasResponse`（有 statusCode）+ `testResults` 三值。
 

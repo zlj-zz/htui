@@ -28,15 +28,15 @@ Keys:
 
 | Where | Key | Action |
 |---|---|---|
-| any list | type | filter the list |
-| any list | `↑` `↓` | move · `Enter` select |
+| any list | `/` | filter the list |
+| any list | `↑` `↓` | move · `Enter` open/send |
 | any list | `Esc` | clear filter, else go back |
+| any list | `e` | edit the highlighted request in `$EDITOR` |
+| any list | `i` | import an OpenAPI spec |
+| any list | `s` | switch environment |
+| requests | `r` | run-chain (prerequisites first) |
 | any list | `Ctrl-F` | search requests across all files |
-| any list | `Ctrl-O` | import an OpenAPI spec |
-| any list | `Ctrl-V` | edit the highlighted request in `$EDITOR` |
-| any list | `Ctrl-E` | switch environment |
-| requests | `Ctrl-R` | run-chain (prerequisites first) |
-| result | `r` rerun · `b` back · `q` quit | |
+| result | `r` rerun · `e` edit · `v` vars · `t` history · `y`/`Y` copy · `w` save · `h` headers · `b` back · `q` quit | |
 
 ## Importing OpenAPI
 
