@@ -96,6 +96,10 @@ export function collectionEnv(name: string, local: boolean): string {
   return path.join(collectionDir(name, local), 'http-client.env.json');
 }
 
+function isMissing(err: unknown): boolean {
+  return (err as { code?: string } | null)?.code === 'ENOENT';
+}
+
 export type EnvVars = Record<string, string>;
 
 /** Environment names declared in an http-client.env.json file (for the picker). */
@@ -123,8 +127,12 @@ export async function mergeEnv(
   let env: Record<string, EnvVars> = {};
   try {
     env = JSON.parse(await readFile(file, 'utf8')) as Record<string, EnvVars>;
-  } catch {
-    env = {};
+  } catch (err) {
+    // A missing file is fine (start fresh); a corrupt one must NOT be silently
+    // replaced — that would erase the user's variables and secrets.
+    if (!isMissing(err)) {
+      throw new Error(`not overwriting ${file}: it is not valid JSON`);
+    }
   }
   const target = env[envName] ?? (env[envName] = {});
   const force = new Set(forceKeys);

@@ -15,7 +15,7 @@
     "start": "node dist/cli.js",
     "typecheck": "tsc --noEmit",
     "check": "tsx src/parse.selfcheck.ts && tsx src/rows.selfcheck.ts && tsx src/store.selfcheck.ts && tsx src/openapi.selfcheck.ts && tsx src/swagger2.selfcheck.ts && tsx src/result.selfcheck.ts && tsx src/chain.selfcheck.ts && tsx src/run.selfcheck.ts && tsx src/editor.selfcheck.ts && tsx src/share.selfcheck.ts",
-    "e2e": "tsx src/import.e2e.ts && tsx src/chain.e2e.ts"
+    "e2e": "tsx src/import.e2e.ts && tsx src/chain.e2e.ts && tsx src/run.e2e.ts"
   },
   "keywords": [
     "httpyac",

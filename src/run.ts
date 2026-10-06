@@ -23,7 +23,10 @@ export async function runRequest(
   env?: string,
 ): Promise<HttpyacRequestResult> {
   const { arg, cwd } = httpyacTarget(file);
-  const args = ['send', arg, '--line', String(req.line), '--json', '--no-color'];
+  // httpyac's --line matches a region by its `###` line, NOT the request line:
+  // a request line right before the next `###` falls in a dead zone and makes
+  // httpyac open its interactive picker (a hang when headless).
+  const args = ['send', arg, '--line', String(req.startLine), '--json', '--no-color'];
   if (env) args.push('-e', env);
 
   let stdout: string;
