@@ -19,6 +19,8 @@ export interface SearchableListProps<T> {
   onSearchKey?: () => void;
   /** Ctrl-O — reserved import entry. */
   onImportKey?: () => void;
+  /** Ctrl-R — run-chain entry; receives the highlighted item. */
+  onChainKey?: (t: T) => void;
 }
 
 function Row<T>({ entry, selected, hint }: { entry: DisplayEntry<T>; selected: boolean; hint?: string }) {
@@ -51,6 +53,7 @@ export function SearchableList<T>({
   onBack,
   onSearchKey,
   onImportKey,
+  onChainKey,
 }: SearchableListProps<T>) {
   const [query, setQuery] = useState('');
   const [cursor, setCursor] = useState(0);
@@ -95,6 +98,10 @@ export function SearchableList<T>({
         onImportKey?.();
         return;
       }
+      if (key.ctrl && input === 'r') {
+        if (selected) onChainKey?.(selected);
+        return;
+      }
       if (key.ctrl || key.meta) return;
       if (key.backspace || key.delete) {
         setQuery((q) => q.slice(0, -1));
@@ -134,6 +141,7 @@ export function SearchableList<T>({
         {end < filtered.length ? ' ↓' : ''}
         {onSearchKey ? '   [Ctrl-F] search all' : ''}
         {onImportKey ? '   [Ctrl-O] import' : ''}
+        {onChainKey ? '   [Ctrl-R] chain' : ''}
       </Text>
     </Box>
   );

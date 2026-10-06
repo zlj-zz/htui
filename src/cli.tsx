@@ -7,7 +7,8 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import path from 'node:path';
 import { parseRequests, type HttpRequest } from './parse';
-import { hasResponse, testIcon, type TestResult } from './result';
+import { hasResponse, testIcon, type HttpyacRequestResult, type TestResult } from './result';
+import { runChain, type ChainEntry } from './chain';
 import { buildWorkspace, listFiles, type IndexedRequest, type ScannedFile } from './workspace';
 import { importCommand, listCommand, printHelp, printVersion, removeCommand } from './commands';
 import { SearchableList } from './ui/SearchableList';
@@ -15,20 +16,6 @@ import { ImportForm } from './ui/ImportForm';
 
 const execFileAsync = promisify(execFile);
 const MAX_BODY_LINES = 200;
-
-interface HttpyacResponse {
-  statusCode?: number;
-  statusMessage?: string;
-  headers?: Record<string, unknown>;
-  body?: unknown;
-}
-
-interface HttpyacRequestResult {
-  name?: string;
-  response?: HttpyacResponse;
-  duration?: number;
-  testResults?: TestResult[];
-}
 
 /** Delegate execution to httpyac and read its documented JSON contract. */
 async function runHttpyac(file: string, req: HttpRequest): Promise<HttpyacRequestResult> {
@@ -123,6 +110,7 @@ function App({ initialFile }: { initialFile?: string }) {
   const [importReturn, setImportReturn] = useState<'file' | 'request'>('file');
   const [refresh, setRefresh] = useState(0);
   const [result, setResult] = useState<HttpyacRequestResult | null>(null);
+  const [prereqs, setPrereqs] = useState<ChainEntry[]>([]);
   const [error, setError] = useState('');
 
   function fail(message: string) {
@@ -166,13 +154,28 @@ function App({ initialFile }: { initialFile?: string }) {
       .catch((err: unknown) => fail(err instanceof Error ? err.message : String(err)));
   }, [file]);
 
-  async function send(target: Picked, from: From) {
+  async function send(target: Picked, from: From, opts?: { chain?: boolean }) {
     setPicked(target);
     setOrigin(from);
     setError('');
+    setPrereqs([]);
     setStep('sending');
     try {
-      setResult(await runHttpyac(target.file, target.req));
+      if (opts?.chain) {
+        // A dependent request only works when its prerequisites run in the same
+        // httpyac invocation, so run the file slice up to this region.
+        const content = await readFile(target.file, 'utf8');
+        const outcome = await runChain({
+          file: target.file,
+          content,
+          target: target.req,
+          env: process.env.HTUI_ENV,
+        });
+        setPrereqs(outcome.prerequisites);
+        setResult(outcome.target ?? null);
+      } else {
+        setResult(await runHttpyac(target.file, target.req));
+      }
       setStep('result');
     } catch (err: unknown) {
       fail(err instanceof Error ? err.message : String(err));
@@ -196,7 +199,7 @@ function App({ initialFile }: { initialFile?: string }) {
   }
 
   useInput(
-    (input) => {
+    (input, key) => {
       if (input === 'q') exit();
       if (input === 'b' && file) {
         setResult(null);
@@ -204,6 +207,7 @@ function App({ initialFile }: { initialFile?: string }) {
         setStep(origin === 'search' ? 'search' : 'request');
       }
       if (input === 'r' && step === 'result' && picked) void send(picked, origin);
+      if (key.ctrl && input === 'r' && picked) void send(picked, origin, { chain: true });
     },
     { isActive: step === 'result' || step === 'error' },
   );
@@ -212,7 +216,11 @@ function App({ initialFile }: { initialFile?: string }) {
     return (
       <Box flexDirection="column">
         <Text color="red">✗ {error}</Text>
-        <Text dimColor>{file ? '[b] back  ' : ''}[q] quit</Text>
+        <Text dimColor>
+          {file ? '[b] back  ' : ''}
+          {requests && requests.length > 1 ? '[Ctrl-R] run chain (prerequisites first)  ' : ''}
+          [q] quit
+        </Text>
       </Box>
     );
   }
@@ -265,6 +273,7 @@ function App({ initialFile }: { initialFile?: string }) {
         onBack={() => setStep('file')}
         onSearchKey={() => void openSearch('request')}
         onImportKey={() => openImport('request')}
+        onChainKey={(r) => void send({ file, req: r }, 'request', { chain: true })}
       />
     );
   }
@@ -303,6 +312,21 @@ function App({ initialFile }: { initialFile?: string }) {
       </Text>
       {picked ? <Text dimColor>{relOf(picked.file)}</Text> : null}
 
+      {prereqs.length ? (
+        <Box marginTop={1} flexDirection="column">
+          <Text dimColor>
+            chain · {prereqs.length} prerequisite{prereqs.length > 1 ? 's' : ''}
+          </Text>
+          {prereqs.map((p, i) => (
+            <Text key={i} color={p.ok ? 'green' : 'red'}>
+              {p.ok ? '✓' : '✗'} {p.name}
+              {p.statusCode != null ? ` ${p.statusCode}` : ''}
+              {p.message ? ` — ${p.message}` : ''}
+            </Text>
+          ))}
+        </Box>
+      ) : null}
+
       {completed ? (
         <>
           {response?.headers ? (
@@ -331,7 +355,7 @@ function App({ initialFile }: { initialFile?: string }) {
       ) : null}
 
       <Box marginTop={1}>
-        <Text dimColor>[r] rerun [b] back [q] quit</Text>
+        <Text dimColor>[r] rerun [Ctrl-R] chain [b] back [q] quit</Text>
       </Box>
     </Box>
   );

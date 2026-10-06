@@ -1,16 +1,24 @@
 /**
  * Minimal parser for `.http` / `.rest` files (httpyac / REST-Client format).
- * We only need enough to list selectable requests for the TUI; httpyac does
- * the real parsing/execution. Nothing here interprets variables or scripts.
+ * We only need enough to list and slice requests for the TUI; httpyac does the
+ * real parsing/execution. Nothing here interprets variables or scripts.
+ *
+ * A region's identity is `# @name x` when present, else the `### title`; an
+ * unnamed `###` block is only addressable by line (verified against httpyac:
+ * `--name` matches the resolved name, and an unknown name opens a prompt).
  */
 
 export interface HttpRequest {
-  /** Region name (text after `###`) for display, or "default" / "request@N". */
+  /** Resolved name: `# @name` > `### title` > synthesized. */
   name: string;
   method: string;
   url: string;
-  /** 1-based line of the request line — the selector handed to httpyac. */
+  /** 1-based request line — the `--line` selector. */
   line: number;
+  /** 1-based first line of the region (`###` line, or 1 for a whole-file request). */
+  startLine: number;
+  /** 1-based last line of the region (inclusive) — the slice boundary. */
+  endLine: number;
 }
 
 const METHODS = [
@@ -19,50 +27,58 @@ const METHODS = [
 ];
 
 const REQ_RE = new RegExp(`^\\s*(${METHODS.join('|')})\\s+(\\S+)`, 'i');
-const NAME_RE = /^###\s*(.*)$/;
-
-function hasBlocks(content: string): boolean {
-  return /^###/m.test(content);
-}
+const SEP_RE = /^#{3,}\s*(.*)$/;
+const NAME_RE = /^\s*#\s*@name\s+(\S+)/i;
 
 export function parseRequests(content: string): HttpRequest[] {
   const lines = content.split(/\r?\n/);
-  const named = hasBlocks(content);
+
+  // Region boundaries: each `###` starts one; a file without any is one region.
+  const starts: number[] = [];
+  lines.forEach((line, i) => {
+    if (SEP_RE.test(line)) starts.push(i);
+  });
+
+  const regions = starts.length
+    ? starts.map((start, k) => ({
+        start,
+        end: k + 1 < starts.length ? starts[k + 1] - 1 : lines.length - 1,
+        title: (lines[start].match(SEP_RE)?.[1] ?? '').trim(),
+      }))
+    : [{ start: 0, end: lines.length - 1, title: '' }];
+
   const out: HttpRequest[] = [];
+  for (const region of regions) {
+    let method: string | null = null;
+    let url: string | null = null;
+    let line = region.start + 1;
+    let atName: string | null = null;
 
-  let blockName = 'default';
-  let method: string | null = null;
-  let url: string | null = null;
-  let methodLine = 1;
-
-  const flush = () => {
-    // Without `###` blocks a file is a single "default" request; with blocks,
-    // the preamble (globals/scripts) is not a selectable request.
-    const keep = named ? blockName !== 'default' : true;
-    if (method && url && keep) {
-      out.push({ name: blockName, method: method.toUpperCase(), url, line: methodLine });
-    }
-    method = null;
-    url = null;
-  };
-
-  lines.forEach((ln, i) => {
-    const nm = ln.match(NAME_RE);
-    if (nm) {
-      flush();
-      blockName = nm[1].trim() || `request@${i + 1}`;
-      return;
-    }
-    if (!method) {
-      const rm = ln.match(REQ_RE);
-      if (rm) {
-        method = rm[1];
-        url = rm[2];
-        methodLine = i + 1;
+    for (let i = region.start; i <= region.end; i++) {
+      const src = lines[i] ?? '';
+      const nm = src.match(NAME_RE);
+      if (nm && !atName) atName = nm[1];
+      if (!method) {
+        const rm = src.match(REQ_RE);
+        if (rm) {
+          method = rm[1];
+          url = rm[2];
+          line = i + 1;
+        }
       }
     }
-  });
-  flush();
+
+    if (!method || !url) continue; // preamble / script-only region
+    const name = atName || region.title || (starts.length ? `request@${region.start + 1}` : 'default');
+    out.push({
+      name,
+      method: method.toUpperCase(),
+      url,
+      line,
+      startLine: region.start + 1,
+      endLine: region.end + 1,
+    });
+  }
 
   return out;
 }

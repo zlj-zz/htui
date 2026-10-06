@@ -109,9 +109,9 @@ Requests ─e→ $EDITOR 改 ─(返回)→ 自动重读该文件 → Enter 重�
 硬性要求（reviewer 提出，全部采纳）：
 1. **结果按名选**，不是 `requests[0]`（`cli.tsx:57` 必须改）。anonymous 目标 → 按 line 匹配。
 2. **切片要 region 的「结束行」**：`[region 起始 .. 下一 `###` 之前]`，且不能把 body 里的 `###` 当分隔符 → **`parse.ts` 必须产出 region 的 start/end 与 `# @name`**（影响面里不能再写"不动 parse.ts"）。
-3. **前置副作用**：`Ctrl-R` 会重跑前面所有请求。必须（a）执行前提示「将执行 N 个前置请求，（b）`--bail` 显式开启让 login 失败即停，（c）§7 增加「链中第 k 步失败」的渲染。
+3. **前置副作用**：`Ctrl-R` 是**显式动作**（用户已知情），故不加二次确认；`--bail` 已开启让失败即停；结果页列出每个前置的 ✓/✗ 与错误（即「链中第 k 步失败」渲染）。
 4. **临时文件放源文件同目录 + 点号前缀**（如 `.<name>.chain.<uuid>.tmp.http`）：cwd 会破坏 httpyac 的 env/config 解析；非点号会被 `listFiles` 当成集合列出（`workspace.ts:20` 跳过点号项）。
-5. **默认语义**：目标**不是第一个 region** 时，`Enter` **默认走 run-chain**；`Ctrl-R` 为显式强制；首个 region 直接单发。**不搞两套并行流程**。
+5. **默认语义（实现时修正）**：`Enter` = **单发**（快、无副作用）；`Ctrl-R` = **显式 run-chain**。**不采用「非首 region 自动 chain」** —— 那会让生成集合里第 N 个接口去跑前面 N-1 个请求，副作用不可接受。单发失败且文件含多个 region 时，错误页提示 `[Ctrl-R] run chain`。
 
 **其它已定论**：
 - 用 `# @name x` + `{{x}}` / `{{xResponse}}` 就能引用前置响应 —— 但**仍需同一次调用内**，所以 run-chain 依然必要。
