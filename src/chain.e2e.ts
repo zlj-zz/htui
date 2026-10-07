@@ -5,12 +5,13 @@
  */
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { runChain } from './chain';
 import { parseRequests } from './parse';
 import { modelSlice, requestModel } from './request';
+import { isAbort } from './run';
 
 const server = createServer((req, res) => {
   const chunks: Buffer[] = [];
@@ -83,7 +84,48 @@ try {
   assert.equal(editedOutcome.target?.response?.statusCode, 200, 'edited request must send');
   assert.equal(JSON.parse(String(editedOutcome.target?.response?.body)).xtest, 'edited', 'the edited header reached the server');
 
-  console.log('chain.e2e: ok (session cookie + preamble var + edited slice)');
+  // A1 regression: an aborted runChain must kill the child AND remove its
+  // dot-prefixed temp slice.
+  const slow = createServer((_req, res) =>
+    setTimeout(() => {
+      res.setHeader('content-type', 'application/json');
+      res.end('{}');
+    }, 3000),
+  );
+  try {
+    await new Promise<void>((resolve) => slow.listen(0, '127.0.0.1', resolve));
+    const slowPort = (slow.address() as { port: number }).port;
+    const slowFile = path.join(dir, 'slow-chain.http');
+    const slowContent = [
+      '### login',
+      `POST http://127.0.0.1:${port}/login`,
+      '',
+      '### slow target',
+      `GET http://127.0.0.1:${slowPort}/slow`,
+    ].join('\n');
+    await writeFile(slowFile, slowContent);
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 100);
+    const started = Date.now();
+    try {
+      await runChain({
+        file: slowFile,
+        content: slowContent,
+        target: parseRequests(slowContent)[1],
+        signal: controller.signal,
+      });
+      assert.fail('a cancelled chain must not complete');
+    } catch (err) {
+      assert.equal(isAbort(err), true, 'the failure must be recognized as a cancel');
+      assert.ok(Date.now() - started < 2000, 'the cancel must not wait for the response');
+    }
+    const leftovers = (await readdir(dir)).filter((f) => f.includes('.tmp.http'));
+    assert.deepEqual(leftovers, [], 'the aborted chain must clean up its temp slice');
+  } finally {
+    slow.close();
+  }
+
+  console.log('chain.e2e: ok (session cookie + preamble var + edited slice + cancel cleanup)');
 } finally {
   server.close();
   await rm(dir, { recursive: true, force: true });

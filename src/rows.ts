@@ -59,3 +59,12 @@ export function viewport(total: number, cursor: number, size: number): { start: 
   const start = Math.min(Math.max(0, cursor - Math.floor(size / 2)), total - size);
   return { start, end: start + size };
 }
+
+/** Cap what we render — an unbounded body is the biggest screen-flood source. */
+export const MAX_BODY_LINES = 200;
+
+export function clipBody(text: string): string {
+  const lines = text.split('\n');
+  if (lines.length <= MAX_BODY_LINES) return text;
+  return `${lines.slice(0, MAX_BODY_LINES).join('\n')}\n… (+${lines.length - MAX_BODY_LINES} more lines)`;
+}

@@ -19,11 +19,10 @@ import { importCommand, listCommand, printHelp, printVersion, removeCommand, sen
 import { chordOf, hintsFor, resolveKey, type Action, type Step } from './keys';
 import { SearchableList } from './ui/SearchableList';
 import { ImportForm } from './ui/ImportForm';
+import { clipBody } from './rows';
 import { Help } from './ui/Help';
 import { HeaderForm } from './ui/HeaderForm';
 import { RequestPreview } from './ui/RequestPreview';
-
-const MAX_BODY_LINES = 200;
 
 function statusColor(code?: number): string | undefined {
   if (code == null) return undefined;
@@ -49,13 +48,6 @@ function bodyText(body: unknown): string {
   } catch {
     return body;
   }
-}
-
-/** Cap what we render — an unbounded body is the biggest screen-flood source. */
-function clipBody(text: string): string {
-  const lines = text.split('\n');
-  if (lines.length <= MAX_BODY_LINES) return text;
-  return `${lines.slice(0, MAX_BODY_LINES).join('\n')}\n… (+${lines.length - MAX_BODY_LINES} more lines)`;
 }
 
 /** The full response body as text (unclipped) — what y/w copy or save. */

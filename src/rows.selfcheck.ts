@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { buildEntries, filterAndRank, scoreMatch, viewport } from './rows';
+import { buildEntries, clipBody, filterAndRank, scoreMatch, viewport } from './rows';
 
 const k = (s: string) => s;
 
@@ -40,5 +40,13 @@ assert.deepEqual(viewport(3, 0, 5), { start: 0, end: 3 });
 assert.deepEqual(viewport(10, 0, 4), { start: 0, end: 4 });
 assert.deepEqual(viewport(10, 5, 4), { start: 3, end: 7 });
 assert.deepEqual(viewport(10, 9, 4), { start: 6, end: 10 });
+
+// clipBody caps the render and reports the remainder
+assert.equal(clipBody('a\nb\nc'), 'a\nb\nc');
+const big = Array.from({ length: 250 }, (_, i) => `line${i}`).join('\n');
+const clippedLines = clipBody(big).split('\n');
+assert.equal(clippedLines.length, 201); // 200 kept + one summary line
+assert.equal(clippedLines[0], 'line0');
+assert.match(clippedLines[200], /\(\+50 more lines\)/);
 
 console.log('rows.selfcheck: ok');
