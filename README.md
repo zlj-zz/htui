@@ -204,3 +204,7 @@ A deliberately thin shell:
 
 There is no protocol logic and no request editor of our own: httpyac and the `.http`
 file do the real work. The only storage htui owns is the imported collection store.
+
+## License
+
+[MIT](LICENSE) — free to use, modify, and redistribute.
