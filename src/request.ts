@@ -8,7 +8,7 @@
  * Not JSON: a body is raw text, and JSON would force `\n` / `\"` escapes on the
  * user.
  */
-import { parseHeaders, type Header } from './httpfile';
+import { HEADER_RE, parseHeaders, type Header } from './httpfile';
 import type { HttpRequest } from './parse';
 
 export interface RequestModel {
@@ -19,7 +19,6 @@ export interface RequestModel {
 }
 
 const BLANK_RE = /^\s*$/;
-const HEADER_RE = /^([A-Za-z0-9-]+):\s?(.*)$/;
 const REQUEST_LINE_RE = /^\s*([A-Za-z]+)\s+(\S+)\s*$/;
 
 /** Where the body starts and the region ends (0-based line indices). */

@@ -49,4 +49,18 @@ assert.deepEqual(parseHeaders(named, parseRequests(named)[0]), [{ name: 'X-A', v
 const rewritten = withHeaders(named, parseRequests(named)[0], [{ name: 'X-A', value: '1' }, { name: 'X-B', value: '2' }]);
 assert.match(rewritten, /# @name dd/); // preserved
 
+// gRPC channel options are dotted headers — they must stay headers, not body
+const opts = '### g\nGRPC host/svc/method\nx-token: abc\ngrpc.max_receive_message_length: 100\n\n{"greeting":"world"}';
+const oreq = parseRequests(opts)[0];
+assert.deepEqual(parseHeaders(opts, oreq), [
+  { name: 'x-token', value: 'abc' },
+  { name: 'grpc.max_receive_message_length', value: '100' },
+]);
+const optRewritten = withHeaders(opts, oreq, [
+  { name: 'x-token', value: 'abc' },
+  { name: 'grpc.max_receive_message_length', value: '200' },
+]);
+assert.match(optRewritten, /grpc\.max_receive_message_length: 200/);
+assert.match(optRewritten, /\{"greeting":"world"\}/); // body still the body
+
 console.log('httpfile.selfcheck: ok');

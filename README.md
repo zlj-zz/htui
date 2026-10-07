@@ -67,6 +67,91 @@ environment (`s` in the TUI, or `-e`). Limits: **YAML is not supported** (JSON
 only); external (cross-file) `$ref` is not resolved; Swagger 2.0 is converted on
 import.
 
+## RPC (gRPC / tRPC / in-house)
+
+htui adds no protocol layer of its own — [httpyac](https://httpyac.github.io) speaks
+gRPC natively, and htui runs whatever the region says. A gRPC call is just another
+region in the same `.http` file, with the same preview / edit / run / chain keys.
+See `examples/grpc.http` for a runnable example.
+
+### gRPC
+
+```http
+### grpc echo
+# @name grpc_echo
+# @grpc-reflection
+GRPC grpc.postman-echo.com/HelloService/sayHello
+x-token: {{token}}
+
+{"greeting": "world"}
+```
+
+- `# @grpc-reflection` resolves the service from **server reflection** — no `.proto`
+  needed. Without reflection, load protos inside the region instead:
+  `proto < ./proto/user.proto` (relative to the `.http` file).
+- Headers are **gRPC metadata**. `channelcredentials: ssl` selects TLS (plain by
+  default); dotted `grpc.*` headers (`grpc.max_receive_message_length`, …) become
+  channel options. Give an explicit `host:port` — there is no port inference, and
+  a server that terminates TLS at the ingress is still reached plaintext.
+- Success is `statusCode 0` (`OK`). A failed call produces **no response** — htui
+  shows the hook/test error text, which usually means a reflection or method-name
+  mismatch (diagnose with `grpcurl list`).
+- Unary calls only: streaming is not representable in `--json` output. Give long
+  calls a deadline — gRPC without one hangs indefinitely.
+- `Y` (copy as curl) is HTTP-only: for gRPC it emits a command that cannot run.
+
+### Chaining an HTTP login into a gRPC call
+
+Response references like `{{login.response.body.$.token}}` do **not** exist in
+httpyac. Chain through a global variable set in a response hook:
+
+```http
+### login
+# @noCookieJar
+POST https://postman-echo.com/post
+Content-Type: application/json
+
+{"token":"abc123"}
+
+> {%
+  client.global.set('token', response.body.data.token);
+%}
+
+### grpc echo
+GRPC grpc.postman-echo.com/HelloService/sayHello
+x-token: {{token}}
+
+{"greeting": "world"}
+```
+
+The hook sits **inside the login region, after its body**. The variable lives for
+**one httpyac run** (same rule as cookies): send the pair with `r`/`R` (run-chain)
+or `--chain`. Sending the gRPC request alone resolves `{{token}}` from the env
+file only — it will not see the login's value.
+
+### tRPC
+
+tRPC is HTTP + JSON — no adapter:
+
+```http
+### trpc post create
+POST {{trpcUrl}}/post.create
+x-trpc-source: htui
+
+{"title":"hello"}
+```
+
+Batching is a POST with an array. A `trpc-openapi`-style spec imports through the
+normal `htui import`; `httpBatchStreamLink` streaming is not expressible in `.http`.
+
+### In-house protocols
+
+1. **HTTP-shaped** (most are): just `.http` — signing/encryption goes in httpyac's
+   in-file JS hooks (`> {% %}`).
+2. **Non-HTTP**: write an [httpyac plugin](https://httpyac.github.io/plugins/) — an
+   npm package named `httpyac-plugin-<name>`, auto-loaded whenever `httpyac` runs
+   in the project. htui needs no changes.
+
 ## Headless (agents)
 
 ```bash

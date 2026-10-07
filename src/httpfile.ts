@@ -10,7 +10,12 @@ export interface Header {
   value: string;
 }
 
-const HEADER_RE = /^([A-Za-z0-9-]+):\s?(.*)$/;
+/**
+ * Header names include dots and underscores: a gRPC region carries channel
+ * options as headers (`grpc.max_receive_message_length`), and classifying those
+ * lines as body would corrupt the request on the next preview/edit.
+ */
+export const HEADER_RE = /^([A-Za-z0-9._-]+):\s?(.*)$/;
 
 export function parseHeaders(content: string, req: HttpRequest): Header[] {
   const lines = content.split(/\r?\n/);

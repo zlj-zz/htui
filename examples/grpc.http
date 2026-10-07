@@ -1,0 +1,28 @@
+# gRPC works natively through httpyac — no extra dependency, no proto file needed
+# when the server exposes reflection. Send it from the TUI, or:
+#   htui send examples/grpc.http --name grpc_echo --chain
+#
+# Verified against httpyac 6.16.7 (grpc.postman-echo.com public test service).
+
+### login (a plain HTTP request feeding the gRPC call below)
+# @name login
+# @noCookieJar
+POST https://postman-echo.com/post
+Content-Type: application/json
+
+{"token":"abc123"}
+
+> {%
+  // Response references like {{login.response.body.$.token}} do NOT exist in
+  // httpyac. Chain through a global variable instead — it lives for one httpyac
+  // run, so reach this via run-chain (`R` / --chain), not two separate sends.
+  client.global.set('token', response.body.data.token);
+%}
+
+### grpc echo (server reflection resolves the service)
+# @name grpc_echo
+# @grpc-reflection
+GRPC grpc.postman-echo.com/HelloService/sayHello
+x-token: {{token}}
+
+{"greeting": "world"}
