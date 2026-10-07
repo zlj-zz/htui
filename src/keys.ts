@@ -182,3 +182,25 @@ export function hintsFor(step: Step): Array<{ key: string; label: string }> {
     ...Object.entries(GLOBAL).map(([chord, action]) => ({ key: chordLabel(chord), label: ACTION_LABEL[action] })),
   ];
 }
+
+/**
+ * Pack the hints into lines that fit `width`, never splitting one — a footer
+ * that breaks `[i]` away from `import` is unreadable. A hint alone wider than
+ * `width` still gets its own line.
+ */
+export function hintLines(step: Step, width: number): string[] {
+  const items = hintsFor(step).map((h) => `[${h.key}] ${h.label}`);
+  const lines: string[] = [];
+  let current = '';
+  for (const item of items) {
+    const candidate = current ? `${current}  ${item}` : item;
+    if (current && candidate.length > width) {
+      lines.push(current);
+      current = item;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
+}

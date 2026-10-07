@@ -1,5 +1,6 @@
 import { Box, Text, useInput } from 'ink';
-import { chordOf, hintsFor, resolveKey, type Action } from '../keys';
+import { chordOf, resolveKey, type Action } from '../keys';
+import { Hints } from './Hints';
 import { regionText, type RequestModel } from '../request';
 
 /**
@@ -39,7 +40,7 @@ export function RequestPreview({
         <Text dimColor>… {lines.length - shown.length} more lines — Ctrl-E to see it all</Text>
       ) : null}
       {error ? <Text color="red">✗ {error}</Text> : null}
-      <Text dimColor>{hintsFor('preview').map((h) => `[${h.key}] ${h.label}`).join('   ')}</Text>
+      <Hints step="preview" />
     </Box>
   );
 }

@@ -16,7 +16,8 @@ import { modelSlice, parseRegionText, regionText, requestModel, type RequestMode
 import { openEditor } from './editor';
 import { copyToTerminal, toCurl } from './share';
 import { importCommand, listCommand, printHelp, printVersion, removeCommand, sendCommand } from './commands';
-import { chordOf, hintsFor, resolveKey, type Action, type Step } from './keys';
+import { chordOf, resolveKey, type Action, type Step } from './keys';
+import { Hints } from './ui/Hints';
 import { SearchableList } from './ui/SearchableList';
 import { ImportForm } from './ui/ImportForm';
 import { clipBody } from './rows';
@@ -523,7 +524,7 @@ function App({ initialFile }: { initialFile?: string }) {
     return (
       <Box flexDirection="column">
         <Text color="red">✗ {error}</Text>
-        <Text dimColor>{hintsFor('error').map((h) => `[${h.key}] ${h.label}`).join(' ')}</Text>
+        <Hints step="error" />
       </Box>
     );
   }
@@ -668,7 +669,7 @@ function App({ initialFile }: { initialFile?: string }) {
     return (
       <Box flexDirection="column">
         <Spinner label={`Sending ${picked?.req.method} ${picked?.req.url} …`} />
-        <Text dimColor>{hintsFor('sending').map((h) => `[${h.key}] ${h.label}`).join(' ')}</Text>
+        <Hints step="sending" />
       </Box>
     );
   }
@@ -742,8 +743,8 @@ function App({ initialFile }: { initialFile?: string }) {
       ) : null}
 
       {notice ? <Text color="cyan">{notice}</Text> : null}
-      <Box marginTop={1}>
-        <Text dimColor>{hintsFor('result').map((h) => `[${h.key}] ${h.label}`).join(' ')}</Text>
+      <Box marginTop={1} flexDirection="column">
+        <Hints step="result" />
       </Box>
     </Box>
   );

@@ -1,6 +1,7 @@
 import { Box, Text, useInput } from 'ink';
 import { useEffect, useMemo, useState } from 'react';
-import { chordOf, hintsFor, resolveKey, type Action, type Step } from '../keys';
+import { chordOf, resolveKey, type Action, type Step } from '../keys';
+import { Hints } from './Hints';
 import { parseMouse, setMouse, WHEEL_DOWN, WHEEL_UP } from '../mouse';
 import { buildEntries, filterAndRank, viewport, type DisplayEntry } from '../rows';
 
@@ -61,7 +62,6 @@ export function SearchableList<T>({
   const visible = filtered.slice(start, end);
   const entries = buildEntries(visible, { labelOf, groupOf, showGroups: !query.trim() });
   const selected = filtered[cursor];
-  const hints = useMemo(() => hintsFor(step), [step]);
 
   useEffect(() => setCursor(0), [query]);
   useEffect(() => {
@@ -152,8 +152,8 @@ export function SearchableList<T>({
         {start > 0 ? ' ↑' : ''}
         {end < filtered.length ? ' ↓' : ''}
         {filtering ? '' : '   [/] filter'}
-        {filtering ? '' : hints.map((h) => `   [${h.key}] ${h.label}`).join('')}
       </Text>
+      {!filtering ? <Hints step={step} indent="  " /> : null}
     </Box>
   );
 }

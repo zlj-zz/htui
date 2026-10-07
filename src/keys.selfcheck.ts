@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { chordLabel, chordOf, hintsFor, resolveKey, type Step } from './keys';
+import { chordLabel, chordOf, hintLines, hintsFor, resolveKey, type Step } from './keys';
 
 // chord normalization
 assert.equal(chordOf('e', { ctrl: true }), 'ctrl-e');
@@ -84,5 +84,14 @@ assert.equal(hint('Esc'), 'back');
 assert.equal(hint('q'), 'quit');
 assert.equal(chordLabel('ctrl-e'), 'Ctrl-E');
 assert.equal(chordLabel('enter'), 'Enter');
+
+// hints pack to the terminal width without splitting a hint
+const packed = hintLines('request', 40);
+assert.ok(packed.length > 1);
+assert.ok(packed.every((line) => line.length <= 40));
+const requestHints = hintsFor('request').map((h) => `[${h.key}] ${h.label}`);
+assert.ok(requestHints.every((h) => packed.some((line) => line.includes(h))));
+// no room at all: one hint per line, nothing lost
+assert.equal(hintLines('request', 0).length, requestHints.length);
 
 console.log('keys.selfcheck: ok');
