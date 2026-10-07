@@ -16,6 +16,7 @@ import { modelSlice, parseRegionText, regionText, requestModel, type RequestMode
 import { openEditor } from './editor';
 import { copyToTerminal, toCurl } from './share';
 import { importCommand, listCommand, printHelp, printVersion, removeCommand, sendCommand } from './commands';
+import { chordOf, hintsFor, resolveKey, type Action, type Step } from './keys';
 import { SearchableList } from './ui/SearchableList';
 import { ImportForm } from './ui/ImportForm';
 import { Help } from './ui/Help';
@@ -99,7 +100,6 @@ const historyLabel = (e: HistoryEntry) => `${e.method} ${e.url}`;
 const historyHint = (e: HistoryEntry) => `${e.ok ? '✓' : '✗'} ${e.status ?? '?'}  ${e.name}`;
 const envLabel = (n: string) => n;
 
-type Step = 'file' | 'request' | 'search' | 'import' | 'env' | 'headers' | 'preview' | 'sending' | 'result' | 'history' | 'help' | 'error';
 type From = 'request' | 'search' | 'preview';
 interface Picked {
   file: string;
@@ -355,6 +355,102 @@ function App({ initialFile }: { initialFile?: string }) {
     }
   }
 
+  // Each screen's keys are resolved by the shared map (src/keys.ts); these
+  // handlers only say what a given action means *on this screen*.
+  function appAction(action: Action): boolean {
+    if (action === 'help') {
+      openHelp(step);
+      return true;
+    }
+    if (action === 'quit') {
+      exit();
+      return true;
+    }
+    return false;
+  }
+
+  /** Where Esc on the result screen returns to. */
+  function resultReturn(): Step {
+    return origin === 'search' ? 'search' : origin === 'preview' ? 'preview' : 'request';
+  }
+
+  function fileAction(action: Action, f?: ScannedFile) {
+    if (appAction(action)) return;
+    if (action === 'open' && f) {
+      setFile(f.file);
+      setStep('request');
+    } else if (action === 'edit' && f) void edit(f.file, 1);
+    else if (action === 'import') openImport('file');
+    else if (action === 'env' && f) void openEnv(f.file, 'file');
+    else if (action === 'search') void openSearch('file');
+  }
+
+  function requestAction(action: Action, r?: HttpRequest) {
+    if (appAction(action)) return;
+    if (action === 'preview' && r && file) void openPreview(file, r, 'request');
+    // `r` runs it right away — the preview sits on Enter, not on the fast path.
+    else if (action === 'run' && r && file) void send({ file, req: r }, 'request');
+    else if (action === 'chain' && r && file) void send({ file, req: r }, 'request', { chain: true });
+    else if (action === 'headers' && r && file) void openHeaders(file, r, 'request');
+    else if (action === 'edit' && r && file) void edit(file, r.line);
+    else if (action === 'import') openImport('request');
+    else if (action === 'env' && file) void openEnv(file, 'request');
+    else if (action === 'search') void openSearch('request');
+    else if (action === 'back') setStep('file');
+  }
+
+  function searchAction(action: Action, r?: IndexedRequest) {
+    if (appAction(action)) return;
+    if (action === 'preview' && r) void openPreview(r.file, r, 'search');
+    else if (action === 'back') setStep(searchFrom);
+  }
+
+  function historyAction(action: Action, e?: HistoryEntry) {
+    if (appAction(action)) return;
+    if (action === 'resend' && e) void send(e.picked, 'request');
+    else if (action === 'back') setStep(historyReturn);
+  }
+
+  function envAction(action: Action, name?: string) {
+    if (appAction(action)) return;
+    if (action === 'select-env' && name) {
+      setActiveEnv(name);
+      setStep(envReturn);
+    } else if (action === 'edit') void editEnv(envFile);
+    else if (action === 'back') setStep(envReturn);
+  }
+
+  function resultAction(action: Action) {
+    if (appAction(action)) return;
+    if (action === 'back' && file) {
+      setResult(null);
+      setError('');
+      setStep(resultReturn());
+    } else if (action === 'run' && picked) void send(picked, origin);
+    else if (action === 'chain' && picked) void send(picked, origin, { chain: true });
+    else if (action === 'edit' && picked) void edit(picked.file, picked.req.line);
+    else if (action === 'vars' && picked) {
+      void editEnv(path.join(path.dirname(picked.file), 'http-client.env.json'));
+    } else if (action === 'history') {
+      setHistoryReturn('result');
+      setStep('history');
+    } else if (action === 'fold-headers') setShowHeaders((v) => !v);
+    else if (action === 'copy-body' && result) {
+      const r = copyToTerminal(rawBody(result));
+      setNotice(r.ok ? `copied ${r.bytes} bytes` : 'body too large for the clipboard — press w to save it');
+    } else if (action === 'copy-curl' && result && picked) {
+      const sent = result.response?.request;
+      const curl = toCurl({
+        method: sent?.method ?? picked.req.method,
+        url: sent?.url ?? picked.req.url,
+        headers: sent?.headers,
+        body: typeof sent?.body === 'string' ? sent.body : undefined,
+      });
+      const r = copyToTerminal(curl);
+      setNotice(r.ok ? 'copied curl (may contain credentials)' : 'command too large for the clipboard');
+    } else if (action === 'save' && result) void saveBody(result);
+  }
+
   function openHelp(from: Step) {
     setHelpReturn(from);
     setStep('help');
@@ -371,47 +467,17 @@ function App({ initialFile }: { initialFile?: string }) {
 
   useInput(
     (input, key) => {
-      if (input === 'q') exit();
-      if (input === 'b' && file) {
-        setResult(null);
-        setError('');
-        setStep(origin === 'search' ? 'search' : origin === 'preview' ? 'preview' : 'request');
-      }
-      if (input === 'r' && picked) void send(picked, origin);
-      if (input === 'R' && picked) void send(picked, origin, { chain: true });
-      if (input === 'e' && step === 'result' && picked) void edit(picked.file, picked.req.line);
-      if (input === 'v' && step === 'result' && picked) {
-        void editEnv(path.join(path.dirname(picked.file), 'http-client.env.json'));
-      }
-      if (input === 't' && step === 'result') {
-        setHistoryReturn('result');
-        setStep('history');
-      }
-      if (input === 'h' && step === 'result') setShowHeaders((v) => !v);
-      if (input === 'y' && step === 'result' && result) {
-        const r = copyToTerminal(rawBody(result));
-        setNotice(r.ok ? `copied ${r.bytes} bytes` : 'body too large for the clipboard — press w to save it');
-      }
-      if (input === 'Y' && step === 'result' && result && picked) {
-        const sent = result.response?.request;
-        const curl = toCurl({
-          method: sent?.method ?? picked.req.method,
-          url: sent?.url ?? picked.req.url,
-          headers: sent?.headers,
-          body: typeof sent?.body === 'string' ? sent.body : undefined,
-        });
-        const r = copyToTerminal(curl);
-        setNotice(r.ok ? 'copied curl (may contain credentials)' : 'command too large for the clipboard');
-      }
-      if (input === 'w' && step === 'result' && result) void saveBody(result);
-      if (input === '?') openHelp(step);
+      const action = resolveKey(step, chordOf(input, key));
+      if (action) resultAction(action);
     },
     { isActive: step === 'result' || step === 'error' },
   );
 
   useInput(
     (input, key) => {
-      if (input === '?' || key.escape) setStep(helpReturn);
+      const action = resolveKey('help', chordOf(input, key));
+      if (action === 'quit') exit();
+      else if (action === 'back' || action === 'help') setStep(helpReturn);
     },
     { isActive: step === 'help' },
   );
@@ -421,7 +487,7 @@ function App({ initialFile }: { initialFile?: string }) {
       <Box flexDirection="column">
         <Text color="red">✗ {error}</Text>
         <Text dimColor>
-          {file ? '[b] back  ' : ''}
+          {file ? '[Esc] back  ' : ''}
           {picked ? '[r] retry  [R] chain  ' : ''}
           [?] help  [q] quit
         </Text>
@@ -433,6 +499,7 @@ function App({ initialFile }: { initialFile?: string }) {
     return (
       <ImportForm
         onCancel={() => setStep(importReturn)}
+        onAction={appAction}
         onDone={() => {
           setStep(importReturn);
           setRefresh((n) => n + 1);
@@ -452,7 +519,10 @@ function App({ initialFile }: { initialFile?: string }) {
           setHeaderCtx({ ...headerCtx, content: next });
           setRefresh((n) => n + 1);
         }}
-        onClose={() => setStep(headerReturn)}
+        onAction={(action) => {
+          if (action === 'back') setStep(headerReturn);
+          else appAction(action);
+        }}
       />
     );
   }
@@ -464,12 +534,17 @@ function App({ initialFile }: { initialFile?: string }) {
         model={preview.model}
         edited={preview.edited}
         error={preview.error}
-        onSend={() =>
-          void send({ file: preview.file, req: preview.req }, 'preview', preview.edited ? { model: preview.model } : {})
-        }
-        onEdit={() => void editPreview()}
-        onBack={() => setStep(previewReturn)}
-        onQuit={exit}
+        onAction={(action) => {
+          if (action === 'send')
+            void send(
+              { file: preview.file, req: preview.req },
+              'preview',
+              preview.edited ? { model: preview.model } : {},
+            );
+          else if (action === 'edit-preview') void editPreview();
+          else if (action === 'back') setStep(previewReturn);
+          else appAction(action);
+        }}
       />
     );
   }
@@ -479,16 +554,14 @@ function App({ initialFile }: { initialFile?: string }) {
   if (step === 'history') {
     return (
       <SearchableList
+        step="history"
         header={`History (${history.length})  ·  env:${activeEnv}`}
-        onHelp={() => openHelp('history')}
-        onQuit={exit}
         placeholder="filter history…"
         items={history}
         keyOf={historyKey}
         labelOf={historyLabel}
         hintOf={historyHint}
-        onSelect={(e) => void send(e.picked, 'request')}
-        onBack={() => setStep(historyReturn)}
+        onAction={historyAction}
       />
     );
   }
@@ -497,22 +570,13 @@ function App({ initialFile }: { initialFile?: string }) {
     if (!envNames) return <Spinner label="Reading environments…" />;
     return (
       <SearchableList
+        step="env"
         header={`Environment · ${relOf(envFile)}  (current: ${activeEnv})`}
-        onHelp={() => openHelp('env')}
-        onQuit={exit}
         placeholder="filter environments…"
         items={envNames}
         keyOf={envLabel}
         labelOf={envLabel}
-        onSelect={(n) => {
-          setActiveEnv(n);
-          setStep(envReturn);
-        }}
-        onCommand={(key) => {
-          if (key === 'e') void editEnv(envFile);
-        }}
-        controls={[{ key: 'e', label: 'edit file' }]}
-        onBack={() => setStep(envReturn)}
+        onAction={envAction}
       />
     );
   }
@@ -521,33 +585,15 @@ function App({ initialFile }: { initialFile?: string }) {
     if (!files) return <Spinner label="Scanning for .http / .rest files…" />;
     return (
       <SearchableList
+        step="file"
         header={`Select a file — ${process.cwd()}  ·  env:${activeEnv}`}
-        onHelp={() => openHelp('file')}
-        onQuit={exit}
         placeholder="filter files…"
         items={files}
         keyOf={fileKey}
         labelOf={fileLabel}
         hintOf={fileHint}
         groupOf={fileGroup}
-        onSelect={(f) => {
-          setFile(f.file);
-          setStep('request');
-        }}
-        onCommand={(key, f) => {
-          if (key === 'e' && f) void edit(f.file, 1);
-          else if (key === 'i') openImport('file');
-          else if (key === 's' && f) void openEnv(f.file, 'file');
-        }}
-        onControl={(key) => {
-          if (key === 'f') void openSearch('file');
-        }}
-        controls={[
-          { key: 'e', label: 'edit' },
-          { key: 'i', label: 'import' },
-          { key: 's', label: 'env' },
-          { key: 'Ctrl-F', label: 'search' },
-        ]}
+        onAction={fileAction}
       />
     );
   }
@@ -557,35 +603,14 @@ function App({ initialFile }: { initialFile?: string }) {
     if (!requests) return <Spinner label="Parsing requests…" />;
     return (
       <SearchableList
+        step="request"
         header={`${relOf(file)}  ·  env:${activeEnv}`}
-        onHelp={() => openHelp('request')}
-        onQuit={exit}
         placeholder="filter requests…"
         items={requests}
         keyOf={reqKey}
         labelOf={reqLabel}
         hintOf={reqHint}
-        onSelect={(r) => void openPreview(file, r, 'request')}
-        onBack={() => setStep('file')}
-        onCommand={(key, r) => {
-          if (key === 'e' && r) void edit(file, r.line);
-          else if (key === 'h' && r) void openHeaders(file, r, 'request');
-          else if (key === 'i') openImport('request');
-          else if (key === 'r' && r) void send({ file, req: r }, 'request', { chain: true });
-          else if (key === 's') void openEnv(file, 'request');
-        }}
-        onControl={(key) => {
-          if (key === 'f') void openSearch('request');
-        }}
-        controls={[
-          { key: 'Enter', label: 'preview' },
-          { key: 'e', label: 'edit' },
-          { key: 'h', label: 'headers' },
-          { key: 'i', label: 'import' },
-          { key: 'r', label: 'chain' },
-          { key: 's', label: 'env' },
-          { key: 'Ctrl-F', label: 'search' },
-        ]}
+        onAction={requestAction}
       />
     );
   }
@@ -594,16 +619,14 @@ function App({ initialFile }: { initialFile?: string }) {
     if (!workspace) return <Spinner label="Indexing requests…" />;
     return (
       <SearchableList
+        step="search"
         header={`Search all requests  ·  env:${activeEnv}`}
-        onHelp={() => openHelp('search')}
-        onQuit={exit}
         placeholder="search method / url / name / path…"
         items={workspace}
         keyOf={searchKey}
         labelOf={reqLabel}
         hintOf={searchHint}
-        onSelect={(r) => void openPreview(r.file, r, 'search')}
-        onBack={() => setStep(searchFrom)}
+        onAction={searchAction}
       />
     );
   }
@@ -675,7 +698,7 @@ function App({ initialFile }: { initialFile?: string }) {
 
       {notice ? <Text color="cyan">{notice}</Text> : null}
       <Box marginTop={1}>
-        <Text dimColor>[r] rerun [R] chain [e] edit [v] vars [t] history [y] copy [Y] curl [w] save [h] headers [?] help [b] back [q] quit</Text>
+        <Text dimColor>{hintsFor('result').map((h) => `[${h.key}] ${h.label}`).join(' ')}</Text>
       </Box>
     </Box>
   );

@@ -32,17 +32,16 @@ Keys:
 | any list | `↑` `↓` | move · `Enter` open / preview |
 | requests, search | `Enter` | preview the request (JSON) before sending |
 | preview | `Ctrl-E` | edit this request as `.http` text in `$EDITOR` (this send only, not saved) |
-| preview | `J` | toggle a read-only JSON view |
 | preview | `Enter` | send as shown |
 | any list | `Esc` | clear filter, else go back |
-| any list | `e` | edit the highlighted request in `$EDITOR` |
+| any list | `Ctrl-E` | edit the highlighted request in `$EDITOR` |
 | requests | `h` | edit the request headers (add / edit / delete) |
 | any list | mouse wheel | move the selection (hold **Shift** to select text) |
 | any list | `i` | import an OpenAPI spec |
 | any list | `s` | switch environment |
-| requests | `r` | run-chain (prerequisites first) |
+| requests | `r` / `R` | run now (skip the preview) / run with prerequisites (chain) |
 | any list | `Ctrl-F` | search requests across all files |
-| result | `r` rerun · `e` edit · `v` vars · `t` history · `y`/`Y` copy · `w` save · `h` headers · `b` back · `q` quit | |
+| result | `r`/`R` run · `Ctrl-E` edit · `v` vars · `t` history · `y`/`Y` copy · `w` save · `h` headers · `Esc` back · `q` quit | |
 
 ## Importing OpenAPI
 

@@ -6,7 +6,7 @@ const SECTIONS: Array<{ title: string; keys: Array<[string, string]> }> = [
     keys: [
       ['↑ ↓', 'move'],
       ['/', 'filter the list'],
-      ['Enter', 'open / preview the request'],
+      ['Enter', 'open / preview'],
       ['Esc', 'clear filter, else back'],
       ['?', 'this help'],
       ['q', 'quit'],
@@ -15,11 +15,11 @@ const SECTIONS: Array<{ title: string; keys: Array<[string, string]> }> = [
   {
     title: 'Lists',
     keys: [
-      ['e', 'edit the highlighted request in $EDITOR'],
+      ['Ctrl-E', 'edit the highlighted request in $EDITOR'],
+      ['r / R', 'run / run with prerequisites (chain)'],
       ['h', 'edit the request headers'],
       ['i', 'import an OpenAPI spec'],
       ['s', 'switch environment'],
-      ['r', 'run-chain (run prerequisites first)'],
       ['Ctrl-F', 'search requests across all files'],
       ['wheel', 'scroll / move the selection'],
     ],
@@ -29,21 +29,27 @@ const SECTIONS: Array<{ title: string; keys: Array<[string, string]> }> = [
     keys: [
       ['Enter', 'send as shown'],
       ['Ctrl-E', 'edit the request (.http text) in $EDITOR'],
-      ['J', 'toggle a JSON view'],
       ['Esc', 'back to the list'],
     ],
   },
   {
     title: 'Result',
     keys: [
-      ['r', 'rerun'],
-      ['e', 'edit the request in $EDITOR'],
+      ['r / R', 'rerun / rerun with chain'],
+      ['Ctrl-E', 'edit the request in $EDITOR'],
       ['v', 'edit the variables file'],
       ['t', 'session history'],
       ['y / Y', 'copy body / copy as curl'],
       ['w', 'save the body to a file'],
       ['h', 'fold headers'],
-      ['b', 'back'],
+    ],
+  },
+  {
+    title: 'Text field',
+    keys: [
+      ['Enter', 'submit the field'],
+      ['Esc', 'cancel the field'],
+      ['letters', 'typed — q does not quit here'],
     ],
   },
 ];

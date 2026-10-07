@@ -1,0 +1,76 @@
+import assert from 'node:assert/strict';
+import { chordLabel, chordOf, hintsFor, resolveKey, type Step } from './keys';
+
+// chord normalization
+assert.equal(chordOf('e', { ctrl: true }), 'ctrl-e');
+assert.equal(chordOf('E', { ctrl: true }), 'ctrl-e');
+assert.equal(chordOf('', { return: true }), 'enter');
+assert.equal(chordOf('', { escape: true }), 'escape');
+assert.equal(chordOf('q', {}), 'q');
+assert.equal(chordOf('', {}), null);
+assert.equal(chordOf('\u001B[<64;1;1M', {}), null); // a mouse sequence — the list handles it
+
+// globals hold on every screen, forms included
+const steps: Step[] = [
+  'file', 'request', 'search', 'import', 'env', 'headers', 'preview',
+  'sending', 'result', 'history', 'help', 'error',
+];
+for (const step of steps) {
+  assert.equal(resolveKey(step, 'q'), 'quit', `q quits on ${step}`);
+  assert.equal(resolveKey(step, '?'), 'help', `? helps on ${step}`);
+  assert.equal(resolveKey(step, 'escape'), 'back', `Esc backs on ${step}`);
+}
+
+// Enter is the screen's primary action
+assert.equal(resolveKey('file', 'enter'), 'open');
+assert.equal(resolveKey('request', 'enter'), 'preview');
+assert.equal(resolveKey('search', 'enter'), 'preview');
+assert.equal(resolveKey('headers', 'enter'), 'edit-header');
+assert.equal(resolveKey('preview', 'enter'), 'send');
+assert.equal(resolveKey('history', 'enter'), 'resend');
+assert.equal(resolveKey('env', 'enter'), 'select-env');
+assert.equal(resolveKey('result', 'enter'), null);
+
+// edit is Ctrl-E wherever it exists, and the old bare `e` is gone
+assert.equal(resolveKey('file', 'ctrl-e'), 'edit');
+assert.equal(resolveKey('request', 'ctrl-e'), 'edit');
+assert.equal(resolveKey('env', 'ctrl-e'), 'edit');
+assert.equal(resolveKey('result', 'ctrl-e'), 'edit');
+assert.equal(resolveKey('preview', 'ctrl-e'), 'edit-preview');
+assert.equal(resolveKey('request', 'e'), null);
+assert.equal(resolveKey('result', 'e'), null);
+
+// run / chain are the same key on the request list and the result screen
+assert.equal(resolveKey('request', 'r'), 'run');
+assert.equal(resolveKey('result', 'r'), 'run');
+assert.equal(resolveKey('request', 'R'), 'chain');
+assert.equal(resolveKey('result', 'R'), 'chain');
+
+// `h` is "headers" on both, but a different action
+assert.equal(resolveKey('request', 'h'), 'headers');
+assert.equal(resolveKey('result', 'h'), 'fold-headers');
+
+// scopes deliberately left narrow (not globalised)
+assert.equal(resolveKey('search', 'r'), null);
+assert.equal(resolveKey('result', 's'), null);
+assert.equal(resolveKey('history', 'ctrl-f'), null);
+assert.equal(resolveKey('env', 'i'), null);
+
+// `b` is gone — Esc is the only way back
+assert.equal(resolveKey('result', 'b'), null);
+assert.equal(resolveKey('error', 'b'), null);
+
+// hints are generated from the same table
+const request = hintsFor('request');
+const hint = (key: string) => request.find((h) => h.key === key)?.label;
+assert.equal(hint('Enter'), 'preview');
+assert.equal(hint('Ctrl-E'), 'edit');
+assert.equal(hint('r'), 'run');
+assert.equal(hint('R'), 'chain');
+assert.equal(hint('?'), 'help');
+assert.equal(hint('Esc'), 'back');
+assert.equal(hint('q'), 'quit');
+assert.equal(chordLabel('ctrl-e'), 'Ctrl-E');
+assert.equal(chordLabel('enter'), 'Enter');
+
+console.log('keys.selfcheck: ok');

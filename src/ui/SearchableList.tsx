@@ -1,15 +1,12 @@
 import { Box, Text, useInput } from 'ink';
 import { useEffect, useMemo, useState } from 'react';
-import { buildEntries, filterAndRank, viewport, type DisplayEntry } from '../rows';
+import { chordOf, hintsFor, resolveKey, type Action, type Step } from '../keys';
 import { parseMouse, setMouse, WHEEL_DOWN, WHEEL_UP } from '../mouse';
-
-export interface KeyHint {
-  /** Shown literally, e.g. `e`, `Ctrl-F`, `/`. */
-  key: string;
-  label: string;
-}
+import { buildEntries, filterAndRank, viewport, type DisplayEntry } from '../rows';
 
 export interface SearchableListProps<T> {
+  /** Which screen this is — drives key resolution and the footer hints. */
+  step: Step;
   items: T[];
   keyOf: (t: T) => string;
   labelOf: (t: T) => string;
@@ -19,19 +16,8 @@ export interface SearchableListProps<T> {
   placeholder?: string;
   maxVisible?: number;
   isActive?: boolean;
-  onSelect: (t: T) => void;
-  /** Esc with no filter. */
-  onBack?: () => void;
-  /** Plain keys in normal mode (filter is entered with `/`). */
-  onCommand?: (key: string, item: T | undefined) => void;
-  /** Ctrl-<key> chords, reserved everywhere. */
-  onControl?: (key: string, item: T | undefined) => void;
-  /** `?` in normal mode. */
-  onHelp?: () => void;
-  /** `q` in normal mode — quit. */
-  onQuit?: () => void;
-  /** Footer hints (display only). */
-  controls?: KeyHint[];
+  /** Every command key is resolved through the shared key map, then lands here. */
+  onAction: (action: Action, item: T | undefined) => void;
 }
 
 function Row<T>({ entry, selected, hint }: { entry: DisplayEntry<T>; selected: boolean; hint?: string }) {
@@ -47,11 +33,13 @@ function Row<T>({ entry, selected, hint }: { entry: DisplayEntry<T>; selected: b
 }
 
 /**
- * Vim-like list: normal mode takes plain command keys, `/` enters filtering
- * (type to narrow, Enter to keep, Esc to clear). One instance is mounted per
- * step, so a single `useInput` is safe.
+ * Vim-like list: normal mode takes command keys, `/` enters filtering (type to
+ * narrow, Enter to keep, Esc to clear). Movement and filtering live here; every
+ * command key goes through `resolveKey` so it cannot drift from other screens.
+ * One instance is mounted per step, so a single `useInput` is safe.
  */
 export function SearchableList<T>({
+  step,
   items,
   keyOf,
   labelOf,
@@ -61,13 +49,7 @@ export function SearchableList<T>({
   placeholder = 'press / to filter',
   maxVisible,
   isActive = true,
-  onSelect,
-  onBack,
-  onCommand,
-  onControl,
-  onHelp,
-  onQuit,
-  controls,
+  onAction,
 }: SearchableListProps<T>) {
   const [query, setQuery] = useState('');
   const [filtering, setFiltering] = useState(false);
@@ -79,6 +61,7 @@ export function SearchableList<T>({
   const visible = filtered.slice(start, end);
   const entries = buildEntries(visible, { labelOf, groupOf, showGroups: !query.trim() });
   const selected = filtered[cursor];
+  const hints = useMemo(() => hintsFor(step), [step]);
 
   useEffect(() => setCursor(0), [query]);
   useEffect(() => {
@@ -101,10 +84,6 @@ export function SearchableList<T>({
         else if (mouse.button === WHEEL_DOWN) setCursor((c) => Math.min(filtered.length - 1, c + 1));
         return;
       }
-      if (key.ctrl && input.length === 1) {
-        onControl?.(input.toLowerCase(), selected);
-        return;
-      }
       if (key.meta) return;
 
       if (filtering) {
@@ -117,18 +96,26 @@ export function SearchableList<T>({
         return;
       }
 
-      // normal mode
-      if (key.upArrow) setCursor((c) => Math.max(0, c - 1));
-      else if (key.downArrow) setCursor((c) => Math.min(filtered.length - 1, c + 1));
-      else if (key.return) {
-        if (selected) onSelect(selected); // no-op on an empty match set
-      } else if (key.escape) {
-        if (query) setQuery('');
-        else onBack?.();
-      } else if (input === '/') setFiltering(true);
-      else if (input === '?') onHelp?.();
-      else if (input === 'q') onQuit?.();
-      else if (input.length === 1) onCommand?.(input, selected);
+      // normal mode — movement and the filter switch stay local
+      if (key.upArrow) {
+        setCursor((c) => Math.max(0, c - 1));
+        return;
+      }
+      if (key.downArrow) {
+        setCursor((c) => Math.min(filtered.length - 1, c + 1));
+        return;
+      }
+      if (input === '/') {
+        setFiltering(true);
+        return;
+      }
+      if (key.escape && query) {
+        setQuery(''); // clear the filter before going back
+        return;
+      }
+
+      const action = resolveKey(step, chordOf(input, key));
+      if (action) onAction(action, selected);
     },
     { isActive },
   );
@@ -164,9 +151,8 @@ export function SearchableList<T>({
         {filtered.length === items.length ? `${items.length}` : `${filtered.length}/${items.length}`}
         {start > 0 ? ' ↑' : ''}
         {end < filtered.length ? ' ↓' : ''}
-        {filtering ? '' : `   [/] filter`}
-        {filtering ? '' : controls?.map((c) => `   [${c.key}] ${c.label}`).join('')}
-        {filtering ? '' : onHelp ? '   [?] help' : ''}
+        {filtering ? '' : '   [/] filter'}
+        {filtering ? '' : hints.map((h) => `   [${h.key}] ${h.label}`).join('')}
       </Text>
     </Box>
   );

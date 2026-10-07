@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { modelSlice, parseRegionText, regionText, requestModel, toJson } from './request';
+import { modelSlice, parseRegionText, regionText, requestModel } from './request';
 import { parseRequests } from './parse';
 
 const content = [
@@ -52,10 +52,6 @@ assert.deepEqual(parseRegionText(text), edited); // round-trip
 
 // a bodyless request round-trips too
 assert.deepEqual(parseRegionText(regionText(model)), model);
-
-// the JSON view nests a JSON body (no escapes leak); a non-JSON body stays text
-assert.deepEqual(JSON.parse(toJson(edited)).body, { title: 'hello', body: 'from htui' });
-assert.deepEqual(JSON.parse(toJson({ ...edited, body: 'a=1&b=2' })).body, 'a=1&b=2');
 
 // an edited model produces preamble + rebuilt region (deps stay runnable)
 const slice = modelSlice(content, me, edited);

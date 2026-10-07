@@ -2,6 +2,7 @@ import { TextInput } from '@inkjs/ui';
 import { Box, Text, useInput } from 'ink';
 import { useState } from 'react';
 import { parseHeaders, withHeaders, type Header } from '../httpfile';
+import { chordOf, resolveKey, type Action } from '../keys';
 import type { HttpRequest } from '../parse';
 import { SearchableList } from './SearchableList';
 
@@ -13,12 +14,13 @@ export function HeaderForm({
   content,
   req,
   onSave,
-  onClose,
+  onAction,
 }: {
   content: string;
   req: HttpRequest;
   onSave: (content: string) => Promise<void>;
-  onClose: () => void;
+  /** Actions this form does not own (back / help / quit) go to the app. */
+  onAction: (action: Action) => void;
 }) {
   const [headers, setHeaders] = useState<Header[]>(() => parseHeaders(content, req));
   // undefined = list mode, null = adding, a Header = editing that one
@@ -31,6 +33,8 @@ export function HeaderForm({
     setEditing(undefined);
   }
 
+  // In the text field: Esc leaves the field, and nothing else here — the input
+  // owns the keyboard (so typing "q" does not quit).
   useInput(
     (_input, key) => {
       if (key.escape) setEditing(undefined);
@@ -71,30 +75,25 @@ export function HeaderForm({
 
   return (
     <SearchableList
+      step="headers"
       header={`Headers · ${req.method} ${req.url}  (${headers.length})`}
       placeholder="filter headers…"
       items={headers}
       keyOf={(h) => h.name}
       labelOf={(h) => `${h.name}: ${h.value}`}
-      onSelect={(h) => {
-        setError('');
-        setEditing(h);
-      }}
-      onCommand={(key, h) => {
-        if (key === 'a') {
+      onAction={(action, h) => {
+        if (action === 'add-header') {
           setError('');
           setEditing(null);
-        } else if (key === 'd' && h) {
+        } else if (action === 'edit-header' && h) {
+          setError('');
+          setEditing(h);
+        } else if (action === 'delete-header' && h) {
           void commit(headers.filter((x) => x !== h));
+        } else {
+          onAction(action);
         }
       }}
-      controls={[
-        { key: 'a', label: 'add' },
-        { key: 'Enter', label: 'edit' },
-        { key: 'd', label: 'delete' },
-      ]}
-      onQuit={onClose}
-      onBack={onClose}
     />
   );
 }

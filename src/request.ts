@@ -6,7 +6,7 @@
  *
  * The editable/viewable form is `regionText` — the request in `.http` syntax.
  * Not JSON: a body is raw text, and JSON would force `\n` / `\"` escapes on the
- * user. `toJson` exists only as an optional read-only view.
+ * user.
  */
 import { parseHeaders, type Header } from './httpfile';
 import type { HttpRequest } from './parse';
@@ -73,26 +73,6 @@ export function parseRegionText(text: string): RequestModel {
 
   const body = lines.slice(i).join('\n').replace(/\s+$/, '');
   return { method, url, headers, body };
-}
-
-/** A JSON body is nested so it reads naturally; anything else stays a string. */
-function bodyValue(body: string): unknown {
-  if (!body) return undefined;
-  try {
-    return JSON.parse(body);
-  } catch {
-    return body;
-  }
-}
-
-/** Read-only structured view (`J` in the preview). Not the editing format. */
-export function toJson(model: RequestModel): string {
-  const headers: Record<string, string> = {};
-  for (const h of model.headers) headers[h.name] = h.value; // ponytail: duplicate headers collapse — hand-edit if you need them
-  const doc: Record<string, unknown> = { method: model.method, url: model.url, headers };
-  const value = bodyValue(model.body);
-  if (value !== undefined) doc.body = value;
-  return JSON.stringify(doc, null, 2) + '\n';
 }
 
 /**
