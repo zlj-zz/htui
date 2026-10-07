@@ -2,9 +2,10 @@
  * Import an OpenAPI 3.x JSON document into a collection. I/O only — generation
  * lives in `./openapi`.
  *
- * Layout per collection (see docs/design-ux.md §6):
+ * Layout per collection:
  *   collections/<name>/<name>.http           generated, overwritten on re-import
  *   collections/<name>/http-client.env.json  hand-owned, only ever merged
+ *   collections/<name>/<name>.local.http     hand-owned, never touched
  */
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
