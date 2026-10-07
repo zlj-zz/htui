@@ -206,7 +206,8 @@ spec 选择器（复用 `SearchableList` 列 `*.json/*.yaml`）→ 命名 → �
 | 滚轮 | 列表 | 移动选中项（开鼠标上报后需 **Shift** 才能拖选文本） |
 | `/` | 列表 | **进入过滤模式** |
 | `Enter` | 列表 | 主操作：open；请求则 **预览（JSON）→ 再 `Enter` 发送** |
-| `Ctrl-E` | Preview | 以 JSON 编辑本次请求（`$EDITOR`，**仅本次、不落盘**） |
+| `Ctrl-E` | Preview | 以 **`.http` 原文**编辑本次请求（`$EDITOR`，**仅本次、不落盘**） |
+| `J` | Preview | 切换只读 JSON 视图 |
 | `Esc` | 全局 | 过滤中→退出；有过滤→清空；否则返回 |
 | `e` | 列表/结果 | `$EDITOR` 打开当前请求（到该行）—— **不必先发一次** |
 | `h` | Requests | 编辑请求 header（增/改/删，写回 `.http`） |

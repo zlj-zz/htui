@@ -45,7 +45,7 @@ npm run typecheck && npm run build  # -> dist/cli.js
 - 身份用 **region 名**（行号会因编辑失效）。
 - 失败判定：`hasResponse`（有 statusCode）+ `testResults` 三值。
 - 鼠标：Ink 不建模鼠标，但 `parseKeypress` 把**未解析的转义序列**透传给 `useInput`（去掉前导 ESC）→ 滚轮 = `[<64;x;yM`。仅在**列表持有键盘时**开 `?1000h?1006h`（过滤态有 TextInput 会把原始字节当文本吞掉），退出还原。
-- 请求预览（`Enter`）：展示文件的 `RequestModel`（**原文**，`{{var}}` **不展开**，不重造 httpyac 解析器）。改动**仅本次**：`Ctrl-E` 编辑临时 JSON → `modelSlice`（preamble + 重建 region）→ `runChain` 的 `slice` 注入口 → 源目录临时 `.http` 跑 `--all`。**源文件永不动**。
+- 请求预览（`Enter`）：展示/编辑用 **`.http` 原文**（`regionText`）——**不用 JSON**：body 是字面文本，JSON 会逼用户手写 `\n`/`\"` 转义。`J` 才是只读 JSON 视图（`toJson`，JSON body 嵌套以便阅读）。变量 `{{var}}` **不展开**（不重造 httpyac 解析器）。改动**仅本次**：`Ctrl-E` 编辑临时 `.http` → `modelSlice`（preamble + 重建 region）→ `runChain` 的 `slice` 注入口 → 源目录临时 `.http` 跑 `--all`。**源文件永不动**。
 
 ## Top pitfalls
 - 生成文件里写 `@var` → env 永远失效（写死不写活）。

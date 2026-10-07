@@ -28,7 +28,8 @@ const SECTIONS: Array<{ title: string; keys: Array<[string, string]> }> = [
     title: 'Preview (after Enter)',
     keys: [
       ['Enter', 'send as shown'],
-      ['Ctrl-E', 'edit the request as JSON in $EDITOR'],
+      ['Ctrl-E', 'edit the request (.http text) in $EDITOR'],
+      ['J', 'toggle a JSON view'],
       ['Esc', 'back to the list'],
     ],
   },

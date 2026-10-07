@@ -12,7 +12,7 @@ import { runChain, type ChainEntry } from './chain';
 import { runRequest } from './run';
 import { buildWorkspace, listFiles, type IndexedRequest, type ScannedFile } from './workspace';
 import { collectEnvNames } from './store';
-import { fromJson, modelSlice, requestModel, toJson, type RequestModel } from './request';
+import { modelSlice, parseRegionText, regionText, requestModel, type RequestModel } from './request';
 import { openEditor } from './editor';
 import { copyToTerminal, toCurl } from './share';
 import { importCommand, listCommand, printHelp, printVersion, removeCommand, sendCommand } from './commands';
@@ -339,13 +339,13 @@ function App({ initialFile }: { initialFile?: string }) {
     }
   }
 
-  async function editPreviewJson() {
+  async function editPreview() {
     if (!preview) return;
-    const tmp = path.join(os.tmpdir(), `htui-preview-${randomUUID()}.json`);
+    const tmp = path.join(os.tmpdir(), `htui-preview-${randomUUID()}.http`);
     try {
-      await writeFile(tmp, toJson(preview.model), 'utf8');
+      await writeFile(tmp, regionText(preview.model), 'utf8');
       await openEditor(tmp, 1);
-      const model = fromJson(await readFile(tmp, 'utf8'));
+      const model = parseRegionText(await readFile(tmp, 'utf8'));
       setPreview((p) => (p ? { ...p, model, edited: true, error: '' } : p));
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -461,13 +461,13 @@ function App({ initialFile }: { initialFile?: string }) {
     if (!preview) return <Spinner label="Reading request…" />;
     return (
       <RequestPreview
-        json={toJson(preview.model)}
+        model={preview.model}
         edited={preview.edited}
         error={preview.error}
         onSend={() =>
           void send({ file: preview.file, req: preview.req }, 'preview', preview.edited ? { model: preview.model } : {})
         }
-        onEdit={() => void editPreviewJson()}
+        onEdit={() => void editPreview()}
         onBack={() => setStep(previewReturn)}
         onQuit={exit}
       />

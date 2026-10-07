@@ -31,7 +31,8 @@ Keys:
 | any list | `/` | filter the list |
 | any list | `↑` `↓` | move · `Enter` open / preview |
 | requests, search | `Enter` | preview the request (JSON) before sending |
-| preview | `Ctrl-E` | edit this request as JSON in `$EDITOR` (this send only, not saved) |
+| preview | `Ctrl-E` | edit this request as `.http` text in `$EDITOR` (this send only, not saved) |
+| preview | `J` | toggle a read-only JSON view |
 | preview | `Enter` | send as shown |
 | any list | `Esc` | clear filter, else go back |
 | any list | `e` | edit the highlighted request in `$EDITOR` |

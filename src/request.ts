@@ -3,6 +3,10 @@
  * send runs. Variables like `{{token}}` are left unresolved on purpose: we do
  * not re-implement httpyac's template engine, and the temp file we run keeps
  * the file's preamble, so httpyac resolves them for real.
+ *
+ * The editable/viewable form is `regionText` — the request in `.http` syntax.
+ * Not JSON: a body is raw text, and JSON would force `\n` / `\"` escapes on the
+ * user. `toJson` exists only as an optional read-only view.
  */
 import { parseHeaders, type Header } from './httpfile';
 import type { HttpRequest } from './parse';
@@ -16,6 +20,7 @@ export interface RequestModel {
 
 const BLANK_RE = /^\s*$/;
 const HEADER_RE = /^([A-Za-z0-9-]+):\s?(.*)$/;
+const REQUEST_LINE_RE = /^\s*([A-Za-z]+)\s+(\S+)\s*$/;
 
 /** Where the body starts and the region ends (0-based line indices). */
 function boundary(lines: string[], req: HttpRequest): { bodyStart: number; regionEnd: number } {
@@ -34,45 +39,60 @@ export function requestModel(content: string, req: HttpRequest): RequestModel {
   return { method: req.method, url: req.url, headers: parseHeaders(content, req), body };
 }
 
+/** The request in `.http` syntax — header lines, a blank line, then the body
+ *  verbatim. This is what the preview shows and what `$EDITOR` edits. */
+export function regionText(model: RequestModel): string {
+  const lines = [`${model.method} ${model.url}`, ...model.headers.map((h) => `${h.name}: ${h.value}`)];
+  if (model.body) lines.push('', ...model.body.split('\n'));
+  return lines.join('\n') + '\n';
+}
+
+/** Parse `regionText` back into a model. */
+export function parseRegionText(text: string): RequestModel {
+  const lines = text.split(/\r?\n/);
+  let i = 0;
+  while (i < lines.length && BLANK_RE.test(lines[i])) i++;
+
+  const head = (lines[i] ?? '').match(REQUEST_LINE_RE);
+  if (!head) throw new Error('the first line must be "METHOD url"');
+  const method = head[1].toUpperCase();
+  const url = head[2];
+  i++;
+
+  const headers: Header[] = [];
+  while (i < lines.length) {
+    if (BLANK_RE.test(lines[i])) {
+      i++;
+      break;
+    }
+    const h = lines[i].match(HEADER_RE);
+    if (!h) break; // not a header and not blank — the body starts here
+    headers.push({ name: h[1], value: h[2] });
+    i++;
+  }
+
+  const body = lines.slice(i).join('\n').replace(/\s+$/, '');
+  return { method, url, headers, body };
+}
+
+/** A JSON body is nested so it reads naturally; anything else stays a string. */
+function bodyValue(body: string): unknown {
+  if (!body) return undefined;
+  try {
+    return JSON.parse(body);
+  } catch {
+    return body;
+  }
+}
+
+/** Read-only structured view (`J` in the preview). Not the editing format. */
 export function toJson(model: RequestModel): string {
   const headers: Record<string, string> = {};
   for (const h of model.headers) headers[h.name] = h.value; // ponytail: duplicate headers collapse — hand-edit if you need them
   const doc: Record<string, unknown> = { method: model.method, url: model.url, headers };
-  if (model.body) doc.body = model.body;
+  const value = bodyValue(model.body);
+  if (value !== undefined) doc.body = value;
   return JSON.stringify(doc, null, 2) + '\n';
-}
-
-export function fromJson(text: string): RequestModel {
-  let raw: unknown;
-  try {
-    raw = JSON.parse(text);
-  } catch (err) {
-    throw new Error(`invalid JSON: ${err instanceof Error ? err.message : String(err)}`);
-  }
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) throw new Error('expected a JSON object');
-  const obj = raw as Record<string, unknown>;
-
-  if (typeof obj.method !== 'string' || !obj.method.trim()) throw new Error('"method" must be a non-empty string');
-  if (typeof obj.url !== 'string' || !obj.url.trim()) throw new Error('"url" must be a non-empty string');
-
-  const headers: Header[] = [];
-  if (obj.headers !== undefined) {
-    if (typeof obj.headers !== 'object' || obj.headers === null || Array.isArray(obj.headers)) {
-      throw new Error('"headers" must be an object of name → value');
-    }
-    for (const [name, value] of Object.entries(obj.headers as Record<string, unknown>)) {
-      if (typeof value !== 'string') throw new Error(`header "${name}" must be a string`);
-      headers.push({ name, value });
-    }
-  }
-
-  let body = '';
-  if (obj.body !== undefined) {
-    if (typeof obj.body !== 'string') throw new Error('"body" must be a string');
-    body = obj.body;
-  }
-
-  return { method: obj.method.trim().toUpperCase(), url: obj.url.trim(), headers, body };
 }
 
 /**
