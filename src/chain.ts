@@ -58,6 +58,8 @@ export async function runChain(opts: {
   content: string;
   target: HttpRequest;
   env?: string;
+  /** Explicit slice (an edited target) — defaults to `sliceUpTo(content, target)`. */
+  slice?: string;
 }): Promise<ChainOutcome> {
   const dir = path.dirname(opts.file);
   // Dot-prefixed so workspace scanning never treats the temp file as a collection.
@@ -68,7 +70,7 @@ export async function runChain(opts: {
   if (opts.env) args.push('-e', opts.env);
 
   try {
-    await writeFile(tempPath, sliceUpTo(opts.content, opts.target), 'utf8');
+    await writeFile(tempPath, opts.slice ?? sliceUpTo(opts.content, opts.target), 'utf8');
     let stdout = '';
     let stderr = '';
     try {

@@ -45,6 +45,7 @@ npm run typecheck && npm run build  # -> dist/cli.js
 - 身份用 **region 名**（行号会因编辑失效）。
 - 失败判定：`hasResponse`（有 statusCode）+ `testResults` 三值。
 - 鼠标：Ink 不建模鼠标，但 `parseKeypress` 把**未解析的转义序列**透传给 `useInput`（去掉前导 ESC）→ 滚轮 = `[<64;x;yM`。仅在**列表持有键盘时**开 `?1000h?1006h`（过滤态有 TextInput 会把原始字节当文本吞掉），退出还原。
+- 请求预览（`Enter`）：展示文件的 `RequestModel`（**原文**，`{{var}}` **不展开**，不重造 httpyac 解析器）。改动**仅本次**：`Ctrl-E` 编辑临时 JSON → `modelSlice`（preamble + 重建 region）→ `runChain` 的 `slice` 注入口 → 源目录临时 `.http` 跑 `--all`。**源文件永不动**。
 
 ## Top pitfalls
 - 生成文件里写 `@var` → env 永远失效（写死不写活）。
@@ -53,6 +54,7 @@ npm run typecheck && npm run build  # -> dist/cli.js
 - run-chain 用 `--all` → 输出是 N 个请求，**目标 = 切片最后一个**，别取 `requests[0]`。
 - 切片临时文件放**源目录 + 点号前缀**（否则被当成 collection，或破坏 env/config 解析）。
 - 开鼠标报告后终端**不再拖选文本**（需按 Shift / Terminal.app 的 Option）—— 鼠标能力的固有代价。
+- 预览编辑**重建整个 region**（请求行 + headers + body）：region 内的指令/脚本（`// @no-cookie-jar`、`> {% %}`）会丢——只影响本次临时发送，源文件不动。
 - OSC52 大 payload 会被终端截断 → 已设上限并提示改用 `w`。
 
 ## Dependencies

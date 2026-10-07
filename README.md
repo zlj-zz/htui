@@ -29,7 +29,10 @@ Keys:
 | Where | Key | Action |
 |---|---|---|
 | any list | `/` | filter the list |
-| any list | `↑` `↓` | move · `Enter` open/send |
+| any list | `↑` `↓` | move · `Enter` open / preview |
+| requests, search | `Enter` | preview the request (JSON) before sending |
+| preview | `Ctrl-E` | edit this request as JSON in `$EDITOR` (this send only, not saved) |
+| preview | `Enter` | send as shown |
 | any list | `Esc` | clear filter, else go back |
 | any list | `e` | edit the highlighted request in `$EDITOR` |
 | requests | `h` | edit the request headers (add / edit / delete) |
@@ -81,7 +84,7 @@ state from earlier requests (cookie, token) is available.
 ```bash
 npm install
 npm run dev -- examples/demo.http
-npm run check        # pure-logic self-checks (parse, rows, store, openapi)
+npm run check        # 15 pure-logic self-checks (parse, rows, store, request, mouse, …)
 npm run e2e          # import -> send every request via --line against a mock server
 npm run typecheck
 npm run build        # -> dist/cli.js

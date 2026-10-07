@@ -205,7 +205,8 @@ spec 选择器（复用 `SearchableList` 列 `*.json/*.yaml`）→ 命名 → �
 | `↑` `↓` `PgUp/PgDn` | 列表 | 移动 |
 | 滚轮 | 列表 | 移动选中项（开鼠标上报后需 **Shift** 才能拖选文本） |
 | `/` | 列表 | **进入过滤模式** |
-| `Enter` | 列表 | 主操作：open / send |
+| `Enter` | 列表 | 主操作：open；请求则 **预览（JSON）→ 再 `Enter` 发送** |
+| `Ctrl-E` | Preview | 以 JSON 编辑本次请求（`$EDITOR`，**仅本次、不落盘**） |
 | `Esc` | 全局 | 过滤中→退出；有过滤→清空；否则返回 |
 | `e` | 列表/结果 | `$EDITOR` 打开当前请求（到该行）—— **不必先发一次** |
 | `h` | Requests | 编辑请求 header（增/改/删，写回 `.http`） |
@@ -219,7 +220,7 @@ spec 选择器（复用 `SearchableList` 列 `*.json/*.yaml`）→ 命名 → �
 | `?` | 全局 | 帮助 |
 | `q` | 全局 | 退出 |
 
-**模式定义**：`normal`（明文命令）、`filter`（`/` 进入）、`search-body`（Result 内，待办）、`form`（Import）。互斥，任一时刻只有一个输入处理器挂载。
+**模式定义**：`normal`（明文命令）、`filter`（`/` 进入）、`preview`（请求预览：`Enter` 发送 / `Ctrl-E` 编辑 JSON / `Esc` 返回）、`search-body`（Result 内，待办）、`form`（Import）。互斥，任一时刻只有一个输入处理器挂载。
 
 **实现**（`src/ui/SearchableList.tsx`）：`onCommand(key, item)` 受理明文命令，`onControl(key, item)` 受理 Ctrl 弦；过滤态由组件内部持有（`filtering`/`query`），`Enter` 保留、`Esc` 清空退出。
 
@@ -351,14 +352,13 @@ spec 选择器（复用 `SearchableList` 列 `*.json/*.yaml`）→ 命名 → �
 
 ## 12. 状态与待办
 
-**已实现**：S1 · S2（含环境选择器 `s`）· S2.5 · S3（`e`/`v`/`t`）· S4（`y`/`Y`/`w`/`h`）· S5（`?` 帮助）。
+**已实现**：S1 · S2（含环境选择器 `s`）· S2.5 · S3（`e`/`v`/`t`/`h`）· S4（`y`/`Y`/`w`/`h`）· S5（`?` 帮助）· **请求预览 + 本次临时改参** · 鼠标滚轮。
 `htui send`（headless run-chain）已实现；`--name` 语义已定。
 
 **未决 / 待办**（按建议顺序）：
 
 | 项 | 归属 | 备注 |
 |---|---|---|
-| **`Enter` 预览 + 本次临时改参** | 新增 | 发前先看/改此次要发的请求（JSON），**不落盘**；需先定「物化回 `.http`」与「展开 vs 原文」 |
 | `Esc` 取消在途发送 | S4 | 需把 `execFile` 的 child 句柄从 `runRequest`/`runChain` 留出来 |
 | `/` 响应体内搜索 | S4 | 进入输入模式（§5） |
 | 启动时检测缺 `httpyac` | S5 | 与运行时 ENOENT 区分 |

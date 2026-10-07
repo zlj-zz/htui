@@ -14,7 +14,7 @@
     "build": "tsup src/cli.tsx --format esm --clean && chmod +x dist/cli.js",
     "start": "node dist/cli.js",
     "typecheck": "tsc --noEmit",
-    "check": "tsx src/parse.selfcheck.ts && tsx src/rows.selfcheck.ts && tsx src/store.selfcheck.ts && tsx src/openapi.selfcheck.ts && tsx src/swagger2.selfcheck.ts && tsx src/result.selfcheck.ts && tsx src/chain.selfcheck.ts && tsx src/run.selfcheck.ts && tsx src/editor.selfcheck.ts && tsx src/share.selfcheck.ts && tsx src/commands.selfcheck.ts && tsx src/workspace.selfcheck.ts && tsx src/httpfile.selfcheck.ts && tsx src/mouse.selfcheck.ts",
+    "check": "tsx src/parse.selfcheck.ts && tsx src/rows.selfcheck.ts && tsx src/store.selfcheck.ts && tsx src/openapi.selfcheck.ts && tsx src/swagger2.selfcheck.ts && tsx src/result.selfcheck.ts && tsx src/chain.selfcheck.ts && tsx src/run.selfcheck.ts && tsx src/editor.selfcheck.ts && tsx src/share.selfcheck.ts && tsx src/commands.selfcheck.ts && tsx src/workspace.selfcheck.ts && tsx src/httpfile.selfcheck.ts && tsx src/mouse.selfcheck.ts && tsx src/request.selfcheck.ts",
     "e2e": "tsx src/import.e2e.ts && tsx src/chain.e2e.ts && tsx src/run.e2e.ts"
   },
   "keywords": [

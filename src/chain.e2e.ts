@@ -10,6 +10,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { runChain } from './chain';
 import { parseRequests } from './parse';
+import { modelSlice, requestModel } from './request';
 
 const server = createServer((req, res) => {
   const chunks: Buffer[] = [];
@@ -20,7 +21,7 @@ const server = createServer((req, res) => {
       res.setHeader('set-cookie', 'sid=abc; Path=/');
       res.end(JSON.stringify({ token: 'XYZ' }));
     } else {
-      res.end(JSON.stringify({ cookie: req.headers.cookie ?? null }));
+      res.end(JSON.stringify({ cookie: req.headers.cookie ?? null, xtest: req.headers['x-test'] ?? null }));
     }
   });
 });
@@ -59,7 +60,30 @@ try {
   const preOutcome = await runChain({ file: preFile, content: preContent, target: preTarget });
   assert.equal(preOutcome.target?.response?.statusCode, 200, 'preamble @var must resolve under --all');
 
-  console.log('chain.e2e: ok (session cookie + preamble var survive the slice)');
+  // an edited request (preview → send) runs the preamble + the rebuilt region
+  const editedFile = path.join(dir, 'edited.http');
+  const editedContent = [
+    `@host = http://127.0.0.1:${port}`,
+    '',
+    '### login',
+    'POST {{host}}/login',
+    '',
+    '### me',
+    'GET {{host}}/me',
+  ].join('\n');
+  await writeFile(editedFile, editedContent);
+  const meReq = parseRequests(editedContent)[1];
+  const model = { ...requestModel(editedContent, meReq), headers: [{ name: 'X-Test', value: 'edited' }] };
+  const editedOutcome = await runChain({
+    file: editedFile,
+    content: editedContent,
+    target: meReq,
+    slice: modelSlice(editedContent, meReq, model),
+  });
+  assert.equal(editedOutcome.target?.response?.statusCode, 200, 'edited request must send');
+  assert.equal(JSON.parse(String(editedOutcome.target?.response?.body)).xtest, 'edited', 'the edited header reached the server');
+
+  console.log('chain.e2e: ok (session cookie + preamble var + edited slice)');
 } finally {
   server.close();
   await rm(dir, { recursive: true, force: true });

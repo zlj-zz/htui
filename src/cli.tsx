@@ -12,6 +12,7 @@ import { runChain, type ChainEntry } from './chain';
 import { runRequest } from './run';
 import { buildWorkspace, listFiles, type IndexedRequest, type ScannedFile } from './workspace';
 import { collectEnvNames } from './store';
+import { fromJson, modelSlice, requestModel, toJson, type RequestModel } from './request';
 import { openEditor } from './editor';
 import { copyToTerminal, toCurl } from './share';
 import { importCommand, listCommand, printHelp, printVersion, removeCommand, sendCommand } from './commands';
@@ -19,6 +20,7 @@ import { SearchableList } from './ui/SearchableList';
 import { ImportForm } from './ui/ImportForm';
 import { Help } from './ui/Help';
 import { HeaderForm } from './ui/HeaderForm';
+import { RequestPreview } from './ui/RequestPreview';
 
 const MAX_BODY_LINES = 200;
 
@@ -97,8 +99,8 @@ const historyLabel = (e: HistoryEntry) => `${e.method} ${e.url}`;
 const historyHint = (e: HistoryEntry) => `${e.ok ? '✓' : '✗'} ${e.status ?? '?'}  ${e.name}`;
 const envLabel = (n: string) => n;
 
-type Step = 'file' | 'request' | 'search' | 'import' | 'env' | 'headers' | 'sending' | 'result' | 'history' | 'help' | 'error';
-type From = 'request' | 'search';
+type Step = 'file' | 'request' | 'search' | 'import' | 'env' | 'headers' | 'preview' | 'sending' | 'result' | 'history' | 'help' | 'error';
+type From = 'request' | 'search' | 'preview';
 interface Picked {
   file: string;
   req: HttpRequest;
@@ -130,6 +132,14 @@ function App({ initialFile }: { initialFile?: string }) {
   const [envNames, setEnvNames] = useState<string[] | null>(null);
   const [headerCtx, setHeaderCtx] = useState<{ file: string; content: string; req: HttpRequest } | null>(null);
   const [headerReturn, setHeaderReturn] = useState<Step>('request');
+  const [preview, setPreview] = useState<{
+    file: string;
+    req: HttpRequest;
+    model: RequestModel;
+    edited: boolean;
+    error: string;
+  } | null>(null);
+  const [previewReturn, setPreviewReturn] = useState<Step>('request');
   const [refresh, setRefresh] = useState(0);
   const [result, setResult] = useState<HttpyacRequestResult | null>(null);
   const [prereqs, setPrereqs] = useState<ChainEntry[]>([]);
@@ -214,7 +224,7 @@ function App({ initialFile }: { initialFile?: string }) {
     );
   }
 
-  async function send(target: Picked, from: From, opts?: { chain?: boolean }) {
+  async function send(target: Picked, from: From, opts?: { chain?: boolean; model?: RequestModel }) {
     setPicked(target);
     setOrigin(from);
     setError('');
@@ -224,7 +234,20 @@ function App({ initialFile }: { initialFile?: string }) {
     setStep('sending');
     try {
       let res: HttpyacRequestResult | null;
-      if (opts?.chain) {
+      if (opts?.model) {
+        // Edited in the preview: run the preamble + the rebuilt region, so any
+        // `{{login.response…}}` dependency still resolves.
+        const content = await readFile(target.file, 'utf8');
+        const outcome = await runChain({
+          file: target.file,
+          content,
+          target: target.req,
+          env: activeEnv,
+          slice: modelSlice(content, target.req, opts.model),
+        });
+        setPrereqs(outcome.prerequisites);
+        res = outcome.target ?? null;
+      } else if (opts?.chain) {
         // A dependent request only works when its prerequisites run in the same
         // httpyac invocation, so run the file slice up to this region.
         const content = await readFile(target.file, 'utf8');
@@ -305,6 +328,33 @@ function App({ initialFile }: { initialFile?: string }) {
     }
   }
 
+  async function openPreview(filePath: string, req: HttpRequest, from: Step) {
+    try {
+      const content = await readFile(filePath, 'utf8');
+      setPreview({ file: filePath, req, model: requestModel(content, req), edited: false, error: '' });
+      setPreviewReturn(from);
+      setStep('preview');
+    } catch (err: unknown) {
+      fail(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function editPreviewJson() {
+    if (!preview) return;
+    const tmp = path.join(os.tmpdir(), `htui-preview-${randomUUID()}.json`);
+    try {
+      await writeFile(tmp, toJson(preview.model), 'utf8');
+      await openEditor(tmp, 1);
+      const model = fromJson(await readFile(tmp, 'utf8'));
+      setPreview((p) => (p ? { ...p, model, edited: true, error: '' } : p));
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      setPreview((p) => (p ? { ...p, error: message } : p));
+    } finally {
+      await rm(tmp, { force: true });
+    }
+  }
+
   function openHelp(from: Step) {
     setHelpReturn(from);
     setStep('help');
@@ -325,7 +375,7 @@ function App({ initialFile }: { initialFile?: string }) {
       if (input === 'b' && file) {
         setResult(null);
         setError('');
-        setStep(origin === 'search' ? 'search' : 'request');
+        setStep(origin === 'search' ? 'search' : origin === 'preview' ? 'preview' : 'request');
       }
       if (input === 'r' && picked) void send(picked, origin);
       if (input === 'R' && picked) void send(picked, origin, { chain: true });
@@ -403,6 +453,23 @@ function App({ initialFile }: { initialFile?: string }) {
           setRefresh((n) => n + 1);
         }}
         onClose={() => setStep(headerReturn)}
+      />
+    );
+  }
+
+  if (step === 'preview') {
+    if (!preview) return <Spinner label="Reading request…" />;
+    return (
+      <RequestPreview
+        json={toJson(preview.model)}
+        edited={preview.edited}
+        error={preview.error}
+        onSend={() =>
+          void send({ file: preview.file, req: preview.req }, 'preview', preview.edited ? { model: preview.model } : {})
+        }
+        onEdit={() => void editPreviewJson()}
+        onBack={() => setStep(previewReturn)}
+        onQuit={exit}
       />
     );
   }
@@ -498,7 +565,7 @@ function App({ initialFile }: { initialFile?: string }) {
         keyOf={reqKey}
         labelOf={reqLabel}
         hintOf={reqHint}
-        onSelect={(r) => void send({ file, req: r }, 'request')}
+        onSelect={(r) => void openPreview(file, r, 'request')}
         onBack={() => setStep('file')}
         onCommand={(key, r) => {
           if (key === 'e' && r) void edit(file, r.line);
@@ -511,6 +578,7 @@ function App({ initialFile }: { initialFile?: string }) {
           if (key === 'f') void openSearch('request');
         }}
         controls={[
+          { key: 'Enter', label: 'preview' },
           { key: 'e', label: 'edit' },
           { key: 'h', label: 'headers' },
           { key: 'i', label: 'import' },
@@ -534,7 +602,7 @@ function App({ initialFile }: { initialFile?: string }) {
         keyOf={searchKey}
         labelOf={reqLabel}
         hintOf={searchHint}
-        onSelect={(r) => void send({ file: r.file, req: r }, 'search')}
+        onSelect={(r) => void openPreview(r.file, r, 'search')}
         onBack={() => setStep(searchFrom)}
       />
     );

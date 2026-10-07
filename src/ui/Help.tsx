@@ -6,7 +6,7 @@ const SECTIONS: Array<{ title: string; keys: Array<[string, string]> }> = [
     keys: [
       ['↑ ↓', 'move'],
       ['/', 'filter the list'],
-      ['Enter', 'open / send'],
+      ['Enter', 'open / preview the request'],
       ['Esc', 'clear filter, else back'],
       ['?', 'this help'],
       ['q', 'quit'],
@@ -22,6 +22,14 @@ const SECTIONS: Array<{ title: string; keys: Array<[string, string]> }> = [
       ['r', 'run-chain (run prerequisites first)'],
       ['Ctrl-F', 'search requests across all files'],
       ['wheel', 'scroll / move the selection'],
+    ],
+  },
+  {
+    title: 'Preview (after Enter)',
+    keys: [
+      ['Enter', 'send as shown'],
+      ['Ctrl-E', 'edit the request as JSON in $EDITOR'],
+      ['Esc', 'back to the list'],
     ],
   },
   {
