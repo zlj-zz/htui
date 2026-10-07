@@ -9,7 +9,7 @@ import { runChain, type ChainEntry } from './chain';
 import { importOpenApi } from './import-openapi';
 import { parseRequests } from './parse';
 import { isOk, type HttpyacRequestResult } from './result';
-import { runRequest, selectRequest } from './run';
+import { httpyacOnPath, HTTPYAC_INSTALL_HINT, runRequest, selectRequest } from './run';
 import { collectionDir, collectionsDir, readIndex, sanitizeName, writeIndex } from './store';
 
 export interface Flags {
@@ -136,6 +136,12 @@ export async function sendCommand(args: string[]): Promise<number> {
   if (!file) {
     process.stderr.write('usage: htui send <file.http> [--name N | --line N] [--chain] [-e ENV] [--json]\n');
     return 2;
+  }
+
+  // Say so up front instead of failing on the first request.
+  if (!httpyacOnPath()) {
+    process.stderr.write(`htui send: ${HTTPYAC_INSTALL_HINT}\n`);
+    return 1;
   }
 
   const filePath = path.resolve(file);

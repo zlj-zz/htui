@@ -3,6 +3,7 @@
  * headless `htui send` command, so both paths behave identically.
  */
 import { execFile } from 'node:child_process';
+import { statSync } from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import type { HttpRequest } from './parse';
@@ -15,6 +16,30 @@ export function httpyacTarget(file: string): { arg: string; cwd: string } {
   const rel = path.relative(process.cwd(), file);
   const insideCwd = rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
   return insideCwd ? { arg: rel, cwd: process.cwd() } : { arg: path.basename(file), cwd: path.dirname(file) };
+}
+
+export const HTTPYAC_INSTALL_HINT = 'httpyac was not found on PATH — install it with:  npm i -g httpyac';
+
+/**
+ * True when an `httpyac` executable sits somewhere on `p` (default $PATH).
+ * A PATH scan, not a spawn: startup must not pay a node cold-start. Shell
+ * aliases and functions are invisible to this — those callers still get the
+ * hint from the ENOENT mapping in `runRequest`/`runChain`.
+ */
+export function httpyacOnPath(p: string = process.env.PATH ?? ''): boolean {
+  const names = process.platform === 'win32' ? ['httpyac.exe', 'httpyac.cmd', 'httpyac.bat'] : ['httpyac'];
+  return p
+    .split(path.delimiter)
+    .filter(Boolean)
+    .some((dir) =>
+      names.some((name) => {
+        try {
+          return statSync(path.join(dir, name)).isFile();
+        } catch {
+          return false;
+        }
+      }),
+    );
 }
 
 export async function runRequest(
@@ -39,10 +64,12 @@ export async function runRequest(
     }));
   } catch (err: unknown) {
     // httpyac exits non-zero on failed tests but still prints the JSON result.
-    const e = err as { stdout?: string; stderr?: string; message?: string };
+    const e = err as { stdout?: string; stderr?: string; message?: string; code?: string };
     if (e.stdout?.trim()) {
       stdout = e.stdout;
       stderr = e.stderr ?? '';
+    } else if (e.code === 'ENOENT') {
+      throw new Error(HTTPYAC_INSTALL_HINT);
     } else {
       throw new Error(e.stderr || e.message || String(err));
     }

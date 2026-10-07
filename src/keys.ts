@@ -112,6 +112,7 @@ const PER_STEP: Partial<Record<Step, Record<Chord, Action>>> = {
   headers: { a: 'add-header', d: 'delete-header' },
   preview: { 'ctrl-e': 'edit-preview' },
   import: { o: 'overwrite' },
+  error: { r: 'run', R: 'chain', 'ctrl-e': 'edit' },
   result: {
     r: 'run',
     R: 'chain',
@@ -160,16 +161,21 @@ export const ACTION_LABEL: Record<Action, string> = {
   overwrite: 'overwrite',
 };
 
-/** Footer hints for a screen, derived from the tables it dispatches on. */
-export function hintsFor(step: Step): Array<{ key: string; label: string }> {
+/** A screen's own keys: its `Enter` action plus its per-screen verbs. */
+export function screenHints(step: Step): Array<{ key: string; label: string }> {
   const hints: Array<{ key: string; label: string }> = [];
   const primary = PRIMARY[step];
   if (primary) hints.push({ key: 'Enter', label: ACTION_LABEL[primary] });
   for (const [chord, action] of Object.entries(PER_STEP[step] ?? {})) {
     hints.push({ key: chordLabel(chord), label: ACTION_LABEL[action] });
   }
-  for (const [chord, action] of Object.entries(GLOBAL)) {
-    hints.push({ key: chordLabel(chord), label: ACTION_LABEL[action] });
-  }
   return hints;
+}
+
+/** Footer hints for a screen: its own keys plus the ones available everywhere. */
+export function hintsFor(step: Step): Array<{ key: string; label: string }> {
+  return [
+    ...screenHints(step),
+    ...Object.entries(GLOBAL).map(([chord, action]) => ({ key: chordLabel(chord), label: ACTION_LABEL[action] })),
+  ];
 }

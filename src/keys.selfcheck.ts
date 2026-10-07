@@ -56,6 +56,14 @@ assert.equal(resolveKey('result', 's'), null);
 assert.equal(resolveKey('history', 'ctrl-f'), null);
 assert.equal(resolveKey('env', 'i'), null);
 
+// an error screen keeps the verbs that fix the request; the response-only ones
+// (y/Y/w/v/t/h) stay off it, since there is no response to act on
+assert.equal(resolveKey('error', 'r'), 'run');
+assert.equal(resolveKey('error', 'R'), 'chain');
+assert.equal(resolveKey('error', 'ctrl-e'), 'edit');
+assert.equal(resolveKey('error', 'y'), null);
+assert.equal(resolveKey('error', 'v'), null);
+
 // `b` is gone — Esc is the only way back
 assert.equal(resolveKey('result', 'b'), null);
 assert.equal(resolveKey('error', 'b'), null);

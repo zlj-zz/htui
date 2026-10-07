@@ -1,75 +1,41 @@
 import { Box, Text } from 'ink';
+import { screenHints, type Step } from '../keys';
 
-const SECTIONS: Array<{ title: string; keys: Array<[string, string]> }> = [
-  {
-    title: 'Anywhere',
-    keys: [
-      ['↑ ↓', 'move'],
-      ['/', 'filter the list'],
-      ['Enter', 'open / preview'],
-      ['Esc', 'clear filter, else back'],
-      ['?', 'this help'],
-      ['q', 'quit'],
-    ],
-  },
-  {
-    title: 'Lists',
-    keys: [
-      ['Ctrl-E', 'edit the highlighted request in $EDITOR'],
-      ['r / R', 'run / run with prerequisites (chain)'],
-      ['h', 'edit the request headers'],
-      ['i', 'import an OpenAPI spec'],
-      ['s', 'switch environment'],
-      ['Ctrl-F', 'search requests across all files'],
-      ['wheel', 'scroll / move the selection'],
-    ],
-  },
-  {
-    title: 'Preview (after Enter)',
-    keys: [
-      ['Enter', 'send as shown'],
-      ['Ctrl-E', 'edit the request (.http text) in $EDITOR'],
-      ['Esc', 'back to the list'],
-    ],
-  },
-  {
-    title: 'Result',
-    keys: [
-      ['r / R', 'rerun / rerun with chain'],
-      ['Ctrl-E', 'edit the request in $EDITOR'],
-      ['v', 'edit the variables file'],
-      ['t', 'session history'],
-      ['y / Y', 'copy body / copy as curl'],
-      ['w', 'save the body to a file'],
-      ['h', 'fold headers'],
-    ],
-  },
-  {
-    title: 'Text field',
-    keys: [
-      ['Enter', 'submit the field'],
-      ['Esc', 'cancel the field'],
-      ['letters', 'typed — q does not quit here'],
-    ],
-  },
+/**
+ * Generated from the same tables the screens dispatch on (src/keys.ts), so the
+ * help cannot disagree with what is bound. Only the grouping and the legend at
+ * the bottom are hand-written.
+ */
+const SCREENS: Array<{ step: Step; title: string }> = [
+  { step: 'file', title: 'Files' },
+  { step: 'request', title: 'Requests' },
+  { step: 'search', title: 'Search' },
+  { step: 'history', title: 'History' },
+  { step: 'env', title: 'Environment' },
+  { step: 'headers', title: 'Headers' },
+  { step: 'preview', title: 'Preview' },
+  { step: 'result', title: 'Result' },
+  { step: 'error', title: 'Error' },
 ];
 
 export function Help() {
   return (
     <Box flexDirection="column">
       <Text bold>htui · keys</Text>
-      {SECTIONS.map((section) => (
-        <Box key={section.title} flexDirection="column" marginTop={1}>
-          <Text color="cyan">{section.title}</Text>
-          {section.keys.map(([key, label]) => (
-            <Text key={key}>
-              {'  '}
-              {key.padEnd(8)}
-              <Text dimColor>{label}</Text>
-            </Text>
-          ))}
+      <Box marginTop={1} flexDirection="column">
+        <Text color="cyan">Everywhere</Text>
+        <Text dimColor>{'  ? help    Esc back    q quit    (inside a text field, letters are typed)'}</Text>
+      </Box>
+      {SCREENS.map(({ step, title }) => (
+        <Box key={step} marginTop={1} flexDirection="column">
+          <Text color="cyan">{title}</Text>
+          <Text>{'  '}{screenHints(step).map((h) => `[${h.key}] ${h.label}`).join('  ')}</Text>
         </Box>
       ))}
+      <Box marginTop={1} flexDirection="column">
+        <Text dimColor>{'  lists also: ↑↓ move · / filter · wheel scroll'}</Text>
+        <Text dimColor>{'  run = send now · chain = run prerequisites first · preview = look before sending'}</Text>
+      </Box>
       <Box marginTop={1}>
         <Text dimColor>Esc or ? to close</Text>
       </Box>

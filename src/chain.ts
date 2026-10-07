@@ -12,6 +12,7 @@ import { rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import type { HttpRequest } from './parse';
+import { HTTPYAC_INSTALL_HINT } from './run';
 import { isOk, parseSendOutput, type HttpyacRequestResult } from './result';
 
 const execFileAsync = promisify(execFile);
@@ -81,10 +82,12 @@ export async function runChain(opts: {
       }));
     } catch (err: unknown) {
       // httpyac exits non-zero on failure but still prints the JSON result.
-      const e = err as { stdout?: string; stderr?: string; message?: string };
+      const e = err as { stdout?: string; stderr?: string; message?: string; code?: string };
       if (e.stdout?.trim()) {
         stdout = e.stdout;
         stderr = e.stderr ?? '';
+      } else if (e.code === 'ENOENT') {
+        throw new Error(HTTPYAC_INSTALL_HINT);
       } else {
         throw new Error(e.stderr || e.message || String(err));
       }

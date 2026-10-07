@@ -9,7 +9,7 @@ import path from 'node:path';
 import { parseRequests, type HttpRequest } from './parse';
 import { hasResponse, isOk, testIcon, type HttpyacRequestResult, type TestResult } from './result';
 import { runChain, type ChainEntry } from './chain';
-import { runRequest } from './run';
+import { httpyacOnPath, HTTPYAC_INSTALL_HINT, runRequest } from './run';
 import { buildWorkspace, listFiles, type IndexedRequest, type ScannedFile } from './workspace';
 import { collectEnvNames } from './store';
 import { modelSlice, parseRegionText, regionText, requestModel, type RequestModel } from './request';
@@ -486,11 +486,7 @@ function App({ initialFile }: { initialFile?: string }) {
     return (
       <Box flexDirection="column">
         <Text color="red">✗ {error}</Text>
-        <Text dimColor>
-          {file ? '[Esc] back  ' : ''}
-          {picked ? '[r] retry  [R] chain  ' : ''}
-          [?] help  [q] quit
-        </Text>
+        <Text dimColor>{hintsFor('error').map((h) => `[${h.key}] ${h.label}`).join(' ')}</Text>
       </Box>
     );
   }
@@ -709,6 +705,12 @@ function runTui(initialFile?: string) {
     process.stderr.write(
       'htui: needs an interactive terminal (TTY). For scripts/agents use `htui import|list|remove`, or `httpyac send` directly.\n',
     );
+    process.exitCode = 1;
+    return;
+  }
+  // Fail here, not after the user has picked a request.
+  if (!httpyacOnPath()) {
+    process.stderr.write(`htui: ${HTTPYAC_INSTALL_HINT}\n`);
     process.exitCode = 1;
     return;
   }
