@@ -2,7 +2,7 @@
  * Headless CLI commands. These never touch the TUI and never require a TTY,
  * so an agent can drive them.
  */
-import { createRequire } from 'node:module';
+import { appVersion } from './version';
 import { readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { runChain, type ChainEntry } from './chain';
@@ -260,9 +260,7 @@ export function printHelp(): void {
 }
 
 export function printVersion(): void {
-  const require = createRequire(import.meta.url);
-  const { version } = require('../package.json') as { version: string };
-  process.stdout.write(`${version}\n`);
+  process.stdout.write(`${appVersion()}\n`);
 }
 
 function message(err: unknown): string {

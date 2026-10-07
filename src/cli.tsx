@@ -21,6 +21,7 @@ import { Hints } from './ui/Hints';
 import { SearchableList } from './ui/SearchableList';
 import { ImportForm } from './ui/ImportForm';
 import { clipBody } from './rows';
+import { Banner } from './ui/Banner';
 import { Help } from './ui/Help';
 import { HeaderForm } from './ui/HeaderForm';
 import { RequestPreview } from './ui/RequestPreview';
@@ -635,18 +636,21 @@ function App({ initialFile }: { initialFile?: string }) {
   if (step === 'file') {
     if (!files) return <Spinner label="Scanning for .http / .rest files…" />;
     return (
-      <SearchableList
-        step="file"
-        header={`Select a file — ${process.cwd()}  ·  env:${activeEnv}`}
-        placeholder="filter files…"
-        items={files}
-        keyOf={fileKey}
-        labelOf={fileLabel}
-        hintOf={fileHint}
-        groupOf={fileGroup}
-        noun="files"
-        onAction={fileAction}
-      />
+      <Box flexDirection="column">
+        <Banner files={files.length} />
+        <SearchableList
+          step="file"
+          header={`Select a file — ${process.cwd()}  ·  env:${activeEnv}`}
+          placeholder="filter files…"
+          items={files}
+          keyOf={fileKey}
+          labelOf={fileLabel}
+          hintOf={fileHint}
+          groupOf={fileGroup}
+          noun="files"
+          onAction={fileAction}
+        />
+      </Box>
     );
   }
 
