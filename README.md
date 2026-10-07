@@ -41,7 +41,8 @@ Keys:
 | any list | `s` | switch environment |
 | requests | `r` / `R` | run now (skip the preview) / run with prerequisites (chain) |
 | any list | `Ctrl-F` | search requests across all files |
-| result | `r`/`R` run · `Ctrl-E` edit · `v` vars · `t` history · `y`/`Y` copy · `w` save · `h` headers · `Esc` back · `q` quit | |
+| result | `r`/`R` run · `Ctrl-E` edit · `/` search body · `v` vars · `t` history · `y`/`Y` copy · `w` save · `h` headers · `Esc` back · `q` quit | |
+| sending | `Esc` | cancel the in-flight request (kills the child) |
 
 ## Importing OpenAPI
 

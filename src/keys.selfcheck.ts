@@ -50,6 +50,10 @@ assert.equal(resolveKey('result', 'R'), 'chain');
 assert.equal(resolveKey('request', 'h'), 'headers');
 assert.equal(resolveKey('result', 'h'), 'fold-headers');
 
+// body search on the result screen
+assert.equal(resolveKey('result', '/'), 'search-body');
+assert.ok(hintsFor('result').some((h) => h.key === '/' && h.label === 'search body'));
+
 // scopes deliberately left narrow (not globalised)
 assert.equal(resolveKey('search', 'r'), null);
 assert.equal(resolveKey('result', 's'), null);

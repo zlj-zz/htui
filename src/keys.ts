@@ -47,6 +47,7 @@ export type Action =
   | 'copy-body'
   | 'copy-curl'
   | 'save'
+  | 'search-body'
   | 'add-header'
   | 'edit-header'
   | 'delete-header'
@@ -118,6 +119,7 @@ const PER_STEP: Partial<Record<Step, Record<Chord, Action>>> = {
     R: 'chain',
     'ctrl-e': 'edit',
     h: 'fold-headers',
+    '/': 'search-body',
     v: 'vars',
     t: 'history',
     y: 'copy-body',
@@ -155,6 +157,7 @@ export const ACTION_LABEL: Record<Action, string> = {
   'copy-body': 'copy',
   'copy-curl': 'curl',
   save: 'save',
+  'search-body': 'search body',
   'add-header': 'add',
   'edit-header': 'edit',
   'delete-header': 'delete',

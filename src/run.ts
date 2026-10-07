@@ -20,6 +20,12 @@ export function httpyacTarget(file: string): { arg: string; cwd: string } {
 
 export const HTTPYAC_INSTALL_HINT = 'httpyac was not found on PATH — install it with:  npm i -g httpyac';
 
+/** True when an exec run was cancelled through the abort signal. */
+export function isAbort(err: unknown): boolean {
+  const e = err as { killed?: boolean; name?: string; code?: string };
+  return e?.killed === true || e?.name === 'AbortError' || e?.code === 'ABORT_ERR';
+}
+
 /**
  * True when an `httpyac` executable sits somewhere on `p` (default $PATH).
  * A PATH scan, not a spawn: startup must not pay a node cold-start. Shell
@@ -46,6 +52,7 @@ export async function runRequest(
   file: string,
   req: HttpRequest,
   env?: string,
+  signal?: AbortSignal,
 ): Promise<HttpyacRequestResult> {
   const { arg, cwd } = httpyacTarget(file);
   // httpyac's --line matches a region by its `###` line, NOT the request line:
@@ -61,10 +68,12 @@ export async function runRequest(
       encoding: 'utf8',
       maxBuffer: 32 * 1024 * 1024,
       cwd,
+      signal,
     }));
   } catch (err: unknown) {
     // httpyac exits non-zero on failed tests but still prints the JSON result.
     const e = err as { stdout?: string; stderr?: string; message?: string; code?: string };
+    if (isAbort(err)) throw err; // the caller cancelled — keep the abort recognizable
     if (e.stdout?.trim()) {
       stdout = e.stdout;
       stderr = e.stderr ?? '';

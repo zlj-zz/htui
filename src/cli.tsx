@@ -9,7 +9,7 @@ import path from 'node:path';
 import { parseRequests, type HttpRequest } from './parse';
 import { hasResponse, isOk, testIcon, type HttpyacRequestResult, type TestResult } from './result';
 import { runChain, type ChainEntry } from './chain';
-import { httpyacOnPath, HTTPYAC_INSTALL_HINT, runRequest } from './run';
+import { httpyacOnPath, HTTPYAC_INSTALL_HINT, isAbort, runRequest } from './run';
 import { buildWorkspace, listFiles, type IndexedRequest, type ScannedFile } from './workspace';
 import { collectEnvNames } from './store';
 import { modelSlice, parseRegionText, regionText, requestModel, type RequestModel } from './request';
@@ -145,9 +145,16 @@ function App({ initialFile }: { initialFile?: string }) {
   const [prereqs, setPrereqs] = useState<ChainEntry[]>([]);
   const [showHeaders, setShowHeaders] = useState(false);
   const [notice, setNotice] = useState('');
+  const [bodySearching, setBodySearching] = useState(false);
+  const [bodyQuery, setBodyQuery] = useState('');
 
   // Render-side memo: parsing/pretty-printing a body on every keypress is wasteful.
-  const bodyView = useMemo(() => clipBody(bodyText(result?.response?.body)), [result]);
+  const bodyLines = useMemo(() => bodyText(result?.response?.body).split('\n'), [result]);
+  const bodyMatches = useMemo(() => {
+    const query = bodyQuery.trim().toLowerCase();
+    return query ? bodyLines.filter((line) => line.toLowerCase().includes(query)) : bodyLines;
+  }, [bodyLines, bodyQuery]);
+  const bodyView = useMemo(() => clipBody(bodyMatches.join('\n')), [bodyMatches]);
   const headersView = useMemo(
     () => (result?.response?.headers ? clipBody(JSON.stringify(result.response.headers, null, 2)) : ''),
     [result],
@@ -163,6 +170,7 @@ function App({ initialFile }: { initialFile?: string }) {
   }
 
   // initial scan (re-runs on refresh, but auto-selects a file only once)
+  const abortRef = useRef<AbortController | null>(null);
   const didInit = useRef(false);
   useEffect(() => {
     listFiles(process.cwd())
@@ -231,7 +239,11 @@ function App({ initialFile }: { initialFile?: string }) {
     setPrereqs([]);
     setShowHeaders(false);
     setNotice('');
+    setBodyQuery('');
+    setBodySearching(false);
     setStep('sending');
+    const controller = new AbortController();
+    abortRef.current = controller;
     try {
       let res: HttpyacRequestResult | null;
       if (opts?.model) {
@@ -244,6 +256,7 @@ function App({ initialFile }: { initialFile?: string }) {
           target: target.req,
           env: activeEnv,
           slice: modelSlice(content, target.req, opts.model),
+          signal: controller.signal,
         });
         setPrereqs(outcome.prerequisites);
         res = outcome.target ?? null;
@@ -256,16 +269,22 @@ function App({ initialFile }: { initialFile?: string }) {
           content,
           target: target.req,
           env: activeEnv,
+          signal: controller.signal,
         });
         setPrereqs(outcome.prerequisites);
         res = outcome.target ?? null;
       } else {
-        res = await runRequest(target.file, target.req, activeEnv);
+        res = await runRequest(target.file, target.req, activeEnv, controller.signal);
       }
       setResult(res);
       record(target, res);
       setStep('result');
     } catch (err: unknown) {
+      if (isAbort(err)) {
+        setNotice('cancelled');
+        setStep(resultReturn());
+        return;
+      }
       fail(err instanceof Error ? err.message : String(err));
     }
   }
@@ -435,6 +454,7 @@ function App({ initialFile }: { initialFile?: string }) {
       setHistoryReturn('result');
       setStep('history');
     } else if (action === 'fold-headers') setShowHeaders((v) => !v);
+    else if (action === 'search-body') setBodySearching(true);
     else if (action === 'copy-body' && result) {
       const r = copyToTerminal(rawBody(result));
       setNotice(r.ok ? `copied ${r.bytes} bytes` : 'body too large for the clipboard — press w to save it');
@@ -470,7 +490,7 @@ function App({ initialFile }: { initialFile?: string }) {
       const action = resolveKey(step, chordOf(input, key));
       if (action) resultAction(action);
     },
-    { isActive: step === 'result' || step === 'error' },
+    { isActive: (step === 'result' || step === 'error') && !bodySearching },
   );
 
   useInput(
@@ -481,6 +501,31 @@ function App({ initialFile }: { initialFile?: string }) {
     },
     { isActive: step === 'help' },
   );
+
+  useInput(
+    (input, key) => {
+      const action = resolveKey(step, chordOf(input, key));
+      if (action === 'back') cancelSend();
+      else if (action === 'quit') exit();
+    },
+    { isActive: step === 'sending' },
+  );
+
+  useInput(
+    (input, key) => {
+      if (key.return) setBodySearching(false); // keep the filter
+      else if (key.escape) {
+        setBodyQuery('');
+        setBodySearching(false);
+      } else if (key.backspace || key.delete) setBodyQuery((q) => q.slice(0, -1));
+      else if (input) setBodyQuery((q) => q + input.replace(/[\r\n\t]/g, ''));
+    },
+    { isActive: step === 'result' && bodySearching },
+  );
+
+  function cancelSend() {
+    abortRef.current?.abort();
+  }
 
   if (step === 'error') {
     return (
@@ -628,7 +673,12 @@ function App({ initialFile }: { initialFile?: string }) {
   }
 
   if (step === 'sending') {
-    return <Spinner label={`Sending ${picked?.req.method} ${picked?.req.url} …`} />;
+    return (
+      <Box flexDirection="column">
+        <Spinner label={`Sending ${picked?.req.method} ${picked?.req.url} …`} />
+        <Text dimColor>{hintsFor('sending').map((h) => `[${h.key}] ${h.label}`).join(' ')}</Text>
+      </Box>
+    );
   }
 
   const response = result?.response;
@@ -668,6 +718,13 @@ function App({ initialFile }: { initialFile?: string }) {
             ) : (
               <Text dimColor>▸ headers({Object.keys(response.headers).length}) · h to expand</Text>
             )
+          ) : null}
+          {bodySearching ? (
+            <Text>
+              <Text color="cyan">❯ </Text>
+              {bodyQuery || <Text dimColor>filter body… (Enter keep · Esc clear)</Text>}
+              <Text dimColor>{`  ${bodyMatches.length} ${bodyQuery ? 'matches' : 'lines'}`}</Text>
+            </Text>
           ) : null}
           <Box marginTop={1}>
             <Text>{bodyView}</Text>

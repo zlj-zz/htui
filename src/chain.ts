@@ -12,7 +12,7 @@ import { rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import type { HttpRequest } from './parse';
-import { HTTPYAC_INSTALL_HINT } from './run';
+import { HTTPYAC_INSTALL_HINT, isAbort } from './run';
 import { isOk, parseSendOutput, type HttpyacRequestResult } from './result';
 
 const execFileAsync = promisify(execFile);
@@ -61,6 +61,8 @@ export async function runChain(opts: {
   env?: string;
   /** Explicit slice (an edited target) — defaults to `sliceUpTo(content, target)`. */
   slice?: string;
+  /** Cancels the httpyac child when aborted. */
+  signal?: AbortSignal;
 }): Promise<ChainOutcome> {
   const dir = path.dirname(opts.file);
   // Dot-prefixed so workspace scanning never treats the temp file as a collection.
@@ -79,10 +81,12 @@ export async function runChain(opts: {
         encoding: 'utf8',
         maxBuffer: 32 * 1024 * 1024,
         cwd: dir,
+        signal: opts.signal,
       }));
     } catch (err: unknown) {
       // httpyac exits non-zero on failure but still prints the JSON result.
       const e = err as { stdout?: string; stderr?: string; message?: string; code?: string };
+      if (isAbort(err)) throw err; // the caller cancelled — keep the abort recognizable
       if (e.stdout?.trim()) {
         stdout = e.stdout;
         stderr = e.stderr ?? '';

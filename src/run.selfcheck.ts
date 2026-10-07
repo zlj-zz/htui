@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { promisify } from 'node:util';
 import { parseRequests } from './parse';
-import { httpyacOnPath, selectRequest } from './run';
+import { httpyacOnPath, isAbort, selectRequest } from './run';
 
 const reqs = parseRequests(
   ['### login', 'POST http://x/login', '', '### me', '# @name me', 'GET http://x/me'].join('\n'),
@@ -35,5 +37,15 @@ try {
 } finally {
   rmSync(dir, { recursive: true, force: true });
 }
+
+// an aborted spawn is recognized as a cancel (the TUI's Esc path)
+{
+  const controller = new AbortController();
+  const failure = promisify(execFile)('sleep', ['5'], { signal: controller.signal }).catch((err) => err);
+  setTimeout(() => controller.abort(), 50);
+  assert.equal(isAbort(await failure), true);
+}
+assert.equal(isAbort(new Error('plain')), false);
+assert.equal(isAbort({ killed: true }), true);
 
 console.log('run.selfcheck: ok');
