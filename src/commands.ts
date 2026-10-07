@@ -18,6 +18,7 @@ export interface Flags {
   baseUrl?: string;
   env?: string;
   line?: number;
+  into?: string;
   force: boolean;
   local: boolean;
   chain: boolean;
@@ -34,6 +35,7 @@ export function parseFlags(args: string[]): Flags {
     const arg = args[i];
     if (arg === '--name' || arg === '-n') flags.name = args[++i];
     else if (arg === '--base-url') flags.baseUrl = args[++i];
+    else if (arg === '--into') flags.into = args[++i];
     else if (arg === '--env' || arg === '-e') flags.env = args[++i];
     else if (arg === '--line' || arg === '-l') {
       const n = Number(args[++i]);
@@ -41,6 +43,7 @@ export function parseFlags(args: string[]): Flags {
       else flags.line = n;
     } else if (arg.startsWith('--name=')) flags.name = arg.slice('--name='.length);
     else if (arg.startsWith('--base-url=')) flags.baseUrl = arg.slice('--base-url='.length);
+    else if (arg.startsWith('--into=')) flags.into = arg.slice('--into='.length);
     else if (arg.startsWith('--env=')) flags.env = arg.slice('--env='.length);
     else if (arg === '--force' || arg === '-f') flags.force = true;
     else if (arg === '--local') flags.local = true;
@@ -236,7 +239,8 @@ export function printHelp(): void {
       '',
       'usage:',
       '  htui [<file.http>]                      open the TUI (scans cwd)',
-      '  htui import <spec.json> [options]       import OpenAPI 3.x as a collection',
+      '  htui new [--into <file.http>]           create a request interactively',
+      '  htui import <spec.json | spec.proto>    import OpenAPI 3.x or .proto as a collection',
       '  htui list [--local]                     list imported collections',
       '  htui remove <name> [--local]            delete a collection',
       '  htui send <file.http> [options]         send a request (headless)',

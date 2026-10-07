@@ -21,7 +21,7 @@ export interface HttpRequest {
   endLine: number;
 }
 
-const METHODS = [
+export const METHODS = [
   'GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD', 'TRACE',
   'CONNECT', 'GRAPHQL', 'QUERY', 'GRPC', 'WS', 'WEBSOCKET', 'SSE', 'MQTT',
 ];

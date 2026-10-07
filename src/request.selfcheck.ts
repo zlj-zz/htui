@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { modelSlice, parseRegionText, regionText, requestModel } from './request';
+import { appendRegion, modelSlice, parseRegionText, regionText, requestModel } from './request';
 import { parseRequests } from './parse';
 
 const content = [
@@ -65,5 +65,24 @@ assert.doesNotMatch(slice, /Bearer/); // old header replaced, not appended
 
 // parse errors are clear, not silent
 assert.throws(() => parseRegionText('not a request line'), /METHOD url/);
+
+// appendRegion: create + append round-trips through the parser
+const fresh = appendRegion(
+  '',
+  { method: 'GET', url: '{{grpcHost}}/user.v1.UserService/GetUser', headers: [{ name: 'x-token', value: 'abc' }], body: '{"greeting": "world"}' },
+  'new-request',
+);
+assert.match(fresh, /^### new-request\n# @name new-request\nGET \{\{grpcHost\}\}\/user\.v1\.UserService\/GetUser\nx-token: abc\n\n\{"greeting": "world"\}\n$/);
+const listed = parseRequests(fresh);
+assert.equal(listed.length, 1);
+assert.equal(listed[0].name, 'new-request');
+const grown = appendRegion(
+  fresh,
+  { method: 'POST', url: '{{baseUrl}}/pets', headers: [], body: '{"a":1}' },
+  'create-pet',
+);
+assert.equal(parseRequests(grown).length, 2);
+assert.ok(grown.includes('### new-request')); // the first region is untouched
+assert.ok(grown.includes('{"a":1}'));
 
 console.log('request.selfcheck: ok');

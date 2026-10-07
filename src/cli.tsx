@@ -15,8 +15,9 @@ import { collectEnvNames } from './store';
 import { modelSlice, parseRegionText, regionText, requestModel, type RequestModel } from './request';
 import { openEditor } from './editor';
 import { copyToTerminal, toCurl } from './share';
-import { importCommand, listCommand, printHelp, printVersion, removeCommand, sendCommand } from './commands';
+import { importCommand, listCommand, parseFlags, printHelp, printVersion, removeCommand, sendCommand } from './commands';
 import { chordOf, resolveKey, type Action, type Step } from './keys';
+import { NewRequestForm } from './ui/NewRequestForm';
 import { Hints } from './ui/Hints';
 import { SearchableList } from './ui/SearchableList';
 import { ImportForm } from './ui/ImportForm';
@@ -123,9 +124,9 @@ interface HistoryEntry {
   status?: number;
 }
 
-function App({ initialFile }: { initialFile?: string }) {
+function App({ initialFile, initialNew, into }: { initialFile?: string; initialNew?: boolean; into?: string }) {
   const { exit, suspendTerminal } = useApp();
-  const [step, setStep] = useState<Step>('file');
+  const [step, setStep] = useState<Step>(initialNew ? 'new' : 'file');
   const [files, setFiles] = useState<ScannedFile[] | null>(null);
   const [file, setFile] = useState<string | null>(null);
   const [requests, setRequests] = useState<HttpRequest[] | null>(null);
@@ -190,6 +191,7 @@ function App({ initialFile }: { initialFile?: string }) {
         setFiles(found);
         if (didInit.current) return;
         didInit.current = true;
+        if (initialNew) return; // creating a request — no auto-select
         if (initialFile) {
           setFile(path.resolve(initialFile));
           setStep('request');
@@ -199,7 +201,7 @@ function App({ initialFile }: { initialFile?: string }) {
         }
       })
       .catch((err: unknown) => fail(err instanceof Error ? err.message : String(err)));
-  }, [initialFile, refresh]);
+  }, [initialFile, initialNew, refresh]);
 
   // parse requests when a file is chosen
   useEffect(() => {
@@ -598,6 +600,21 @@ function App({ initialFile }: { initialFile?: string }) {
     );
   }
 
+  if (step === 'new') {
+    return (
+      <NewRequestForm
+        into={into}
+        onCancel={() => setStep('file')}
+        onAction={(action) => appAction(action)}
+        onDone={(file) => {
+          setFile(file);
+          setRefresh((n) => n + 1);
+          setStep('request');
+        }}
+      />
+    );
+  }
+
   if (step === 'help') return <Help />;
 
   if (step === 'history') {
@@ -776,6 +793,26 @@ function App({ initialFile }: { initialFile?: string }) {
   );
 }
 
+function runNew(args: string[]) {
+  const flags = parseFlags(args);
+  if (flags.error) {
+    process.stderr.write(`htui new: ${flags.error}\n`);
+    process.exitCode = 1;
+    return;
+  }
+  if (!process.stdin.isTTY) {
+    process.stderr.write('htui: needs an interactive terminal (TTY).\n');
+    process.exitCode = 1;
+    return;
+  }
+  if (!httpyacOnPath()) {
+    process.stderr.write(`htui: ${HTTPYAC_INSTALL_HINT}\n`);
+    process.exitCode = 1;
+    return;
+  }
+  render(<App initialNew into={flags.into} />);
+}
+
 function runTui(initialFile?: string) {
   if (!process.stdin.isTTY) {
     process.stderr.write(
@@ -816,6 +853,9 @@ switch (command) {
   case '--version':
   case '-V':
     printVersion();
+    break;
+  case 'new':
+    runNew(args);
     break;
   default:
     // bare `htui` or `htui <file.http>`

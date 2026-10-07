@@ -76,7 +76,7 @@ export async function writeCollection(opts: WriteCollectionOptions): Promise<Imp
   return { name: opts.name, file, endpoints, overwritten: exists, varsAdded, envName: ENV_NAME };
 }
 
-async function writeAtomic(file: string, content: string): Promise<void> {
+export async function writeAtomic(file: string, content: string): Promise<void> {
   const tmp = `${file}.${randomUUID()}.tmp`;
   try {
     await writeFile(tmp, content, 'utf8');

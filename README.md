@@ -21,10 +21,17 @@ requests straight from your terminal, backed by plain `.http` files.
 ```bash
 htui                    # TUI: scan cwd (+ imported collections); pick file -> request
 htui api/users.http     # open a specific file
+htui new                # TUI: create a request interactively (writes a new .http)
 HTUI_ENV=prod htui      # choose an httpyac environment (-e)
 ```
 
 Keys:
+
+`htui new` opens an interactive form (method → url → name → body → target file)
+and writes a standard region into a **new** `.http` file (or appends when the
+target exists — `--into <file>` presets it). The new request lands selected in
+the normal list: add headers with `h`, fill the body with `Ctrl-E` in the
+preview, and run it like any other request. Requires a TTY.
 
 | Where | Key | Action |
 |---|---|---|

@@ -15,6 +15,7 @@ export type Step =
   | 'request'
   | 'search'
   | 'import'
+  | 'new'
   | 'env'
   | 'headers'
   | 'preview'

@@ -89,3 +89,11 @@ export function modelSlice(content: string, req: HttpRequest, model: RequestMode
     ...body,
   ].join('\n') + '\n';
 }
+
+/** Append a region for `model` (with `### name` + `# @name`) to `content`.
+ *  Pure — the file writer lives with the caller. */
+export function appendRegion(content: string, model: RequestModel, name: string): string {
+  const region = [`### ${name}`, `# @name ${name}`, ...regionText(model).trimEnd().split('\n')].join('\n');
+  const base = content.replace(/\s+$/, '');
+  return base ? `${base}\n\n${region}\n` : `${region}\n`;
+}
