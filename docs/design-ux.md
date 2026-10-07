@@ -54,7 +54,7 @@
 ### 3.1 状态机
 
 ```
-                     Ctrl-O
+                     i
                       ┌──▶ Import ──(done)──┐
                       │                     ▼
   Files ──Enter──▶ Requests ──Enter──▶ Sending ──▶ Result
@@ -63,7 +63,7 @@
     │                      │                          │  │
     └── Ctrl-F ─▶ Search ──Enter───────────────────────┘  │
                                                            │
-  overlay（叠在底屏上，非替换）：? help   Ctrl-E env   Ctrl-R run-chain
+  overlay（叠在底屏上，非替换）：? help   s env   r run-chain
   Result 内：r rerun  t history  e edit  y/Y copy  / search  b back  q quit
 ```
 
@@ -78,16 +78,18 @@
 | J3 | 不知道在哪个文件 | ✅ Ctrl-F | 命中高亮 + 最近优先 |
 | J4 | 导入 spec 并首调 | ⚠️ 变量是坑 | 导入即产 env（§6） |
 | J5 | 改请求（变量/结构） | ❌ | `e`→`$EDITOR`；`v`→变量文件 |
-| J6 | 切环境 dev/prod | ❌ | `Ctrl-E` + 状态栏 |
+| J6 | 切环境 dev/prod | ❌ | `s` + 状态栏 |
 | J7 | 多 case | ❌ | `c`→写 `.local.http`→`$EDITOR` |
 | J8 | 复制/分享 | ❌ | `y`（OSC52，有上限）、`Y`（curl）、`w`（存文件） |
 | J9 | agent 自动化 | ⚠️ **只读类命令** | **新增 `htui send`**（J14） |
 | J10 | 出错能自救 | ❌ 展示误导 | 错误分类 + 行动（§7） |
 | J11 | spec 更新后重导 | ⚠️ 会覆盖手改 | 生成物可覆盖 / **env 与 local 永不覆盖**（§6） |
 | J12 | 会话内复用历史 | ❌ | `t` history，Enter 重发 |
-| J13 | **依赖前置请求的接口** | ❌ 单发拿不到 | `Ctrl-R` run-chain（§2.4） |
+| J13 | **依赖前置请求的接口** | ❌ 单发拿不到 | `r` run-chain（§2.4） |
 | J14 | **agent 跑带前置的请求** | ❌ 无 CLI | **`htui send <file> -n <name> [--chain] --json`** |
 | J15 | **取消在途请求** | ❌ | Sending 时 `Esc` → kill 子进程 → 回列表 |
+
+> 本表「现状」列为**设计时（v1）评估**；实现进度以 **§12** 为准。
 
 ### 3.3 主循环
 ```
@@ -109,7 +111,7 @@ Requests ─e→ $EDITOR 改 ─(返回)→ 自动重读该文件 → Enter 重�
 硬性要求（reviewer 提出，全部采纳）：
 1. **结果按名选**，不是 `requests[0]`（`cli.tsx:57` 必须改）。anonymous 目标 → 按 line 匹配。
 2. **切片要 region 的「结束行」**：`[region 起始 .. 下一 `###` 之前]`，且不能把 body 里的 `###` 当分隔符 → **`parse.ts` 必须产出 region 的 start/end 与 `# @name`**（影响面里不能再写"不动 parse.ts"）。
-3. **前置副作用**：`Ctrl-R` 是**显式动作**（用户已知情），故不加二次确认；`--bail` 已开启让失败即停；结果页列出每个前置的 ✓/✗ 与错误（即「链中第 k 步失败」渲染）。
+3. **前置副作用**：`r` 是**显式动作**（用户已知情），故不加二次确认；`--bail` 已开启让失败即停；结果页列出每个前置的 ✓/✗ 与错误（即「链中第 k 步失败」渲染）。
 4. **临时文件放源文件同目录 + 点号前缀**（如 `.<name>.chain.<uuid>.tmp.http`）：cwd 会破坏 httpyac 的 env/config 解析；非点号会被 `listFiles` 当成集合列出（`workspace.ts:20` 跳过点号项）。
 5. **默认语义**：`Enter` = **单发**（快、无副作用）；`r`（列表）/ `R`（结果页）= run-chain。**不采用「非首 region 自动 chain」** —— 那会让生成集合里第 N 个接口去跑前面 N-1 个请求。
 
@@ -201,6 +203,7 @@ spec 选择器（复用 `SearchableList` 列 `*.json/*.yaml`）→ 命名 → �
 | 键 | 归属 | 动作 |
 |---|---|---|
 | `↑` `↓` `PgUp/PgDn` | 列表 | 移动 |
+| 滚轮 | 列表 | 移动选中项（开鼠标上报后需 **Shift** 才能拖选文本） |
 | `/` | 列表 | **进入过滤模式** |
 | `Enter` | 列表 | 主操作：open / send |
 | `Esc` | 全局 | 过滤中→退出；有过滤→清空；否则返回 |
@@ -268,8 +271,8 @@ spec 选择器（复用 `SearchableList` 列 `*.json/*.yaml`）→ 命名 → �
 ### 7.1 错误分类
 | 类型 | 触发 | 展示 | 动作 |
 |---|---|---|---|
-| 配置/变量 | `x is not defined`、空 `@var` | 红块 + 原文 | `v` / `Ctrl-E` |
-| **缺前置** | 报 `X is not defined`/无响应，且文件前面有 region | 红块 + 提示 | **`Ctrl-R` chain** |
+| 配置/变量 | `x is not defined`、空 `@var` | 红块 + 原文 | `v` / `s` |
+| **缺前置** | 报 `X is not defined`/无响应，且文件前面有 region | 红块 + 提示 | **`r` chain** |
 | **链中某步失败** | run-chain 里第 k 个 region 出错 | 逐步结果列表，标出失败步 | 修该步 / `e` |
 | 连接 | ECONNREFUSED / TLS / DNS / 超时 | 红块 + host:port | `r` / `e` |
 | HTTP 4xx/5xx | 有响应 | 正常结果页，红状态码 | `r` / `e` |
@@ -307,8 +310,8 @@ spec 选择器（复用 `SearchableList` 列 `*.json/*.yaml`）→ 命名 → �
 | 期 | 内容 | 价值 | 成本 |
 |---|---|---|---|
 | **S1** | **仅两个渲染 bug**：`testResults.status` 三值判定；无响应 → 错误块（读 `error` 字段） | 高 | 低 |
-| **S2.5** | **前置依赖**：`parse.ts` 出 region start/end/`@name`；`Enter` 非首 region 默认 chain；`Ctrl-R`；结果按名选；临时文件点号前缀；前置提示 + 逐失败渲染 | **高（补执行模型）** | 中 |
-| **S2** | 变量移出生成文件（write-once env）+ 目录化 + `Ctrl-E` + **始终 `-e`** | 高（解核心矛盾） | 中 |
+| **S2.5** | **前置依赖**：`parse.ts` 出 region start/end/`@name`；`Enter` 非首 region 默认 chain；`r`；结果按名选；临时文件点号前缀；前置提示 + 逐失败渲染 | **高（补执行模型）** | 中 |
+| **S2** | 变量移出生成文件（write-once env）+ 目录化 + `s` + **始终 `-e`** | 高（解核心矛盾） | 中 |
 | **S3** | `e`/`v`（编辑器交接 + 名字身份）、`c` case、历史 `t` | 中高 | 中 |
 | **S4** | `y`/`Y`/`w`、body 搜索模式、headers 折叠、取消 | 中 | 中 |
 | **S5** | `?` 帮助、空态、ENOENT、NO_COLOR、迁移收尾 | 中 | 低 |
@@ -323,7 +326,7 @@ spec 选择器（复用 `SearchableList` 列 `*.json/*.yaml`）→ 命名 → �
 | # | 决策 | 建议 |
 |---|---|---|
 | A | S1 范围 | **只做两个渲染 bug**（`e` 挪到 S3） |
-| B | 默认执行语义 | **非首 region 默认 run-chain**，`Ctrl-R` 强制；不做两套并行流程 |
+| B | 默认执行语义 | **非首 region 默认 run-chain**，`r` 强制；不做两套并行流程 |
 | C | headless 契约 | **立刻定**：`htui send <file> -n <name> [--chain] [--json]` + 退出码 0/1 |
 | D | 切片临时位置 | **源文件同目录 + 点号前缀**（依赖 `parse.ts` 提供 region 结束行） |
 | E | cookieJar | **关**（内存态，不可持久化） |
@@ -355,6 +358,7 @@ spec 选择器（复用 `SearchableList` 列 `*.json/*.yaml`）→ 命名 → �
 
 | 项 | 归属 | 备注 |
 |---|---|---|
+| **`Enter` 预览 + 本次临时改参** | 新增 | 发前先看/改此次要发的请求（JSON），**不落盘**；需先定「物化回 `.http`」与「展开 vs 原文」 |
 | `Esc` 取消在途发送 | S4 | 需把 `execFile` 的 child 句柄从 `runRequest`/`runChain` 留出来 |
 | `/` 响应体内搜索 | S4 | 进入输入模式（§5） |
 | 启动时检测缺 `httpyac` | S5 | 与运行时 ENOENT 区分 |
