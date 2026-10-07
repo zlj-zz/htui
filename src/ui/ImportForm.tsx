@@ -1,14 +1,17 @@
 import { TextInput } from '@inkjs/ui';
 import { Box, Text, useInput } from 'ink';
 import { useState } from 'react';
-import { importOpenApi, inspectSpec, type ImportResult } from '../import-openapi';
+import { importOpenApi, inspectSpec } from '../import-openapi';
+import { importProto, inspectProto } from '../import-proto';
 import { chordOf, resolveKey, type Action } from '../keys';
+import type { ImportResult } from '../write-collection';
 
 type Phase = 'spec' | 'name' | 'confirm';
+type Kind = 'openapi' | 'proto';
 
 /**
- * Runtime OpenAPI import. Reuses the same `importOpenApi` core as the CLI —
- * this component only adds the form.
+ * Runtime import form, routed by file extension: `.proto` → gRPC collection,
+ * anything else → OpenAPI. Both go through the same core as the CLI.
  */
 export function ImportForm({
   local,
@@ -23,6 +26,7 @@ export function ImportForm({
   onAction: (action: Action) => void;
 }) {
   const [phase, setPhase] = useState<Phase>('spec');
+  const [kind, setKind] = useState<Kind>('openapi');
   const [specPath, setSpecPath] = useState('');
   const [defaultName, setDefaultName] = useState('');
   const [name, setName] = useState('');
@@ -31,8 +35,10 @@ export function ImportForm({
   async function chooseSpec(input: string) {
     const value = input.trim();
     if (!value) return;
+    const proto = /\.proto$/i.test(value);
     try {
-      const info = await inspectSpec(value);
+      const info = proto ? await inspectProto(value) : await inspectSpec(value);
+      setKind(proto ? 'proto' : 'openapi');
       setSpecPath(value);
       setDefaultName(info.name);
       setError('');
@@ -45,7 +51,11 @@ export function ImportForm({
   async function runImport(collectionName: string, force: boolean) {
     setName(collectionName);
     try {
-      onDone(await importOpenApi({ specPath, name: collectionName, local, force }));
+      const result =
+        kind === 'proto'
+          ? await importProto({ protoPaths: [specPath], name: collectionName, local, force })
+          : await importOpenApi({ specPath, name: collectionName, local, force });
+      onDone(result);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       if (!force && /already exists/.test(message)) setPhase('confirm');
@@ -53,8 +63,8 @@ export function ImportForm({
     }
   }
 
-  // Esc cancels from any phase. `o` overwrites in the confirm phase. The map
-  // is only consulted outside a text field, so typing "q" never quits.
+  // Esc cancels from any phase. The map is only consulted outside a text field,
+  // so typing "q" never quits.
   useInput((input, key) => {
     const action = resolveKey('import', chordOf(input, key));
     if (!action) return;
@@ -64,12 +74,14 @@ export function ImportForm({
     else onAction(action); // help / quit
   });
 
+  const title = kind === 'proto' ? 'Import gRPC (proto)' : 'Import OpenAPI (JSON)';
+
   if (phase === 'spec') {
     return (
       <Box flexDirection="column">
-        <Text bold>Import OpenAPI (JSON)</Text>
+        <Text bold>{title}</Text>
         <Text dimColor>path to spec file · Esc to cancel</Text>
-        <TextInput placeholder="/path/to/openapi.json" onSubmit={(value) => void chooseSpec(value)} />
+        <TextInput placeholder="/path/to/api.json or api.proto" onSubmit={(value) => void chooseSpec(value)} />
         {error ? <Text color="red">✗ {error}</Text> : null}
       </Box>
     );
@@ -78,7 +90,7 @@ export function ImportForm({
   if (phase === 'name') {
     return (
       <Box flexDirection="column">
-        <Text bold>Import OpenAPI (JSON)</Text>
+        <Text bold>{title}</Text>
         <Text dimColor>{specPath}</Text>
         <Text>collection name</Text>
         <TextInput
@@ -92,7 +104,7 @@ export function ImportForm({
 
   return (
     <Box flexDirection="column">
-      <Text bold>Import OpenAPI (JSON)</Text>
+      <Text bold>{title}</Text>
       <Text color="yellow">collection &quot;{name}&quot; already exists.</Text>
       <Text>[o] overwrite · [Esc] cancel</Text>
       {error ? <Text color="red">✗ {error}</Text> : null}

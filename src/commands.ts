@@ -7,6 +7,7 @@ import { readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { runChain, type ChainEntry } from './chain';
 import { importOpenApi } from './import-openapi';
+import { importProto } from './import-proto';
 import { parseRequests } from './parse';
 import { isOk, type HttpyacRequestResult } from './result';
 import { httpyacOnPath, HTTPYAC_INSTALL_HINT, runRequest, selectRequest } from './run';
@@ -21,13 +22,14 @@ export interface Flags {
   local: boolean;
   chain: boolean;
   json: boolean;
+  reflection: boolean;
   /** Set on a bad option; commands report it and exit 2. */
   error?: string;
   positional: string[];
 }
 
 export function parseFlags(args: string[]): Flags {
-  const flags: Flags = { force: false, local: false, chain: false, json: false, positional: [] };
+  const flags: Flags = { force: false, local: false, chain: false, json: false, reflection: false, positional: [] };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === '--name' || arg === '-n') flags.name = args[++i];
@@ -44,6 +46,7 @@ export function parseFlags(args: string[]): Flags {
     else if (arg === '--local') flags.local = true;
     else if (arg === '--chain') flags.chain = true;
     else if (arg === '--json') flags.json = true;
+    else if (arg === '--reflection') flags.reflection = true;
     else if (arg.startsWith('-') && arg !== '-') flags.error ??= `unknown option: ${arg}`;
     else flags.positional.push(arg);
   }
@@ -56,14 +59,23 @@ export async function importCommand(args: string[]): Promise<number> {
     process.stderr.write(`htui import: ${flags.error}\n`);
     return 2;
   }
-  const { name, baseUrl, force, local, positional } = flags;
+  const { name, baseUrl, force, local, reflection, positional } = flags;
   const spec = positional[0];
   if (!spec) {
-    process.stderr.write('usage: htui import <spec.json> [--name N] [--force] [--local] [--base-url URL]\n');
+    process.stderr.write(
+      'usage: htui import <spec.json | spec.proto> [--name N] [--force] [--local] [--base-url HOST:PORT] [--reflection]\n',
+    );
+    return 2;
+  }
+  const isProto = /\.proto$/i.test(spec);
+  if (!isProto && positional.length > 1) {
+    process.stderr.write('htui import: expected one spec file\n');
     return 2;
   }
   try {
-    const result = await importOpenApi({ specPath: spec, name, baseUrl, force, local });
+    const result = isProto
+      ? await importProto({ protoPaths: positional, name, baseUrl, force, local, reflection })
+      : await importOpenApi({ specPath: spec, name, baseUrl, force, local });
     const verb = result.overwritten ? 'overwrote' : 'imported';
     const env = result.varsAdded ? ` · +${result.varsAdded} vars` : '';
     process.stdout.write(`${verb} ${result.name} → ${result.file} (${result.endpoints} requests)${env}\n`);

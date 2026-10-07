@@ -7,23 +7,12 @@
  *   collections/<name>/http-client.env.json  hand-owned, only ever merged
  *   collections/<name>/<name>.local.http     hand-owned, never touched
  */
-import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { defaultCollectionName, openapiToHttp, type OpenApiDoc } from './openapi';
-import { parseRequests } from './parse';
-import {
-  collectionDir,
-  collectionHttp,
-  mergeEnv,
-  readIndex,
-  sanitizeName,
-  slugify,
-  writeIndex,
-} from './store';
+import { resolveCollectionName } from './store';
 import { swagger2ToOas3, type Swagger2Doc } from './swagger2';
-
-const ENV_NAME = 'default';
+import { writeCollection, type ImportResult } from './write-collection';
 
 export interface ImportOptions {
   specPath: string;
@@ -34,15 +23,7 @@ export interface ImportOptions {
   baseUrl?: string;
 }
 
-export interface ImportResult {
-  name: string;
-  file: string;
-  endpoints: number;
-  overwritten: boolean;
-  /** Environment variables newly added to the env file (never overwritten). */
-  varsAdded: number;
-  envName: string;
-}
+export type { ImportResult } from './write-collection';
 
 function resolveSpec(specPath: string): string {
   const resolved = path.resolve(specPath);
@@ -54,48 +35,23 @@ function resolveSpec(specPath: string): string {
 export async function inspectSpec(specPath: string): Promise<{ name: string }> {
   const resolved = resolveSpec(specPath);
   const doc = await readSpec(resolved);
-  return { name: sanitizeName(slugify(defaultCollectionName(doc, resolved))) };
+  return { name: resolveCollectionName(undefined, defaultCollectionName(doc, resolved)) };
 }
 
 export async function importOpenApi(opts: ImportOptions): Promise<ImportResult> {
   const specPath = resolveSpec(opts.specPath);
   const doc = await readSpec(specPath);
-  const explicitName = opts.name?.trim();
-  const name = explicitName
-    ? sanitizeName(explicitName) // explicit names are validated strictly, never silently rewritten
-    : sanitizeName(slugify(defaultCollectionName(doc, specPath)));
-  const local = Boolean(opts.local);
-  const file = collectionHttp(name, local);
-
-  const index = await readIndex(local);
-  const exists = index[name] !== undefined || (await fileExists(file));
-  if (exists && !opts.force) {
-    throw new Error(`collection "${name}" already exists (use --force to overwrite)`);
-  }
-
+  const name = resolveCollectionName(opts.name, defaultCollectionName(doc, specPath));
   const { text, vars } = openapiToHttp(doc, { source: path.basename(specPath), baseUrl: opts.baseUrl });
-  const endpoints = parseRequests(text).length;
-
-  await mkdir(collectionDir(name, local), { recursive: true });
-  await writeAtomic(file, text);
-  // The env file is hand-owned: fill missing keys only (an explicit --base-url wins).
-  const varsAdded = await mergeEnv(name, local, ENV_NAME, vars, opts.baseUrl ? ['baseUrl'] : []);
-
-  index[name] = { source: opts.specPath, importedAt: new Date().toISOString(), endpoints };
-  await writeIndex(local, index);
-
-  return { name, file, endpoints, overwritten: exists, varsAdded, envName: ENV_NAME };
-}
-
-async function writeAtomic(file: string, content: string): Promise<void> {
-  const tmp = `${file}.${randomUUID()}.tmp`;
-  try {
-    await writeFile(tmp, content, 'utf8');
-    if (process.platform === 'win32') await rm(file, { force: true }); // win rename fails on existing
-    await rename(tmp, file);
-  } finally {
-    await rm(tmp, { force: true });
-  }
+  return writeCollection({
+    name,
+    local: Boolean(opts.local),
+    force: opts.force,
+    text,
+    vars,
+    lockKeys: opts.baseUrl ? ['baseUrl'] : [],
+    source: opts.specPath,
+  });
 }
 
 async function readSpec(specPath: string): Promise<OpenApiDoc> {
@@ -119,13 +75,4 @@ async function readSpec(specPath: string): Promise<OpenApiDoc> {
   }
   // Normalize Swagger 2.0 to OpenAPI 3 so the generator only ever sees v3.
   return candidate.openapi ? candidate : swagger2ToOas3(candidate as Swagger2Doc);
-}
-
-async function fileExists(file: string): Promise<boolean> {
-  try {
-    await readFile(file);
-    return true;
-  } catch {
-    return false;
-  }
 }

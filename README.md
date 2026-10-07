@@ -152,6 +152,25 @@ normal `htui import`; `httpBatchStreamLink` streaming is not expressible in `.ht
    npm package named `httpyac-plugin-<name>`, auto-loaded whenever `httpyac` runs
    in the project. htui needs no changes.
 
+## Importing proto (gRPC)
+
+`htui import` routes by extension — a `.proto` file produces a gRPC collection:
+
+```bash
+htui import user.proto --name user --base-url localhost:50051
+```
+
+One region per rpc method (`GRPC {{grpcHost}}/pkg.Service/Method` with a `{}`
+body stub), the protos copied into `collections/<name>/proto/` and referenced via
+`proto <` lines, and `grpcHost` merged into the env file. Flags: `--force`,
+`--local`, `--base-url host:port` (no scheme — plaintext by default; TLS via
+httpyac's `channelcredentials: ssl` metadata) and `--reflection` (emit
+`# @grpc-reflection` instead of copying protos; needs a server that exposes
+reflection). Well-known types (`google/protobuf/*`) resolve from httpyac's
+bundled copies. Streaming methods are generated too, but `--json` output is
+unary-shaped. Several protos can be passed at once — each becomes a `proto <`
+line, and their `import "…"` statements resolve from the copied neighbours.
+
 ## Headless (agents)
 
 ```bash

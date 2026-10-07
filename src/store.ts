@@ -60,6 +60,11 @@ export function slugify(input: string): string {
   return slug || 'collection';
 }
 
+/** Explicit names are validated strictly, never silently rewritten. */
+export function resolveCollectionName(explicit: string | undefined, fallback: string): string {
+  return explicit?.trim() ? sanitizeName(explicit.trim()) : sanitizeName(slugify(fallback));
+}
+
 interface CollectionMeta {
   source: string;
   importedAt: string;
