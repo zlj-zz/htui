@@ -1,5 +1,5 @@
 {
-  "name": "htui",
+  "name": "@zlj-zz/htui",
   "version": "0.1.0",
   "description": "A terminal UI for httpyac — send HTTP/gRPC/WebSocket requests from your terminal",
   "repository": {
@@ -10,7 +10,10 @@
   "bugs": "https://github.com/zlj-zz/htui/issues",
   "type": "module",
   "bin": {
-    "htui": "./dist/cli.js"
+    "htui": "dist/cli.js"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "engines": {
     "node": ">=22"
