@@ -78,6 +78,7 @@ export function HeaderForm({
       step="headers"
       header={`Headers · ${req.method} ${req.url}  (${headers.length})`}
       placeholder="filter headers…"
+      noun="headers"
       items={headers}
       keyOf={(h) => h.name}
       labelOf={(h) => `${h.name}: ${h.value}`}

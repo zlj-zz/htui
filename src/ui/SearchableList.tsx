@@ -12,6 +12,10 @@ export interface SearchableListProps<T> {
   keyOf: (t: T) => string;
   labelOf: (t: T) => string;
   hintOf?: (t: T) => string | undefined;
+  /** Noun for the count line, e.g. "requests". */
+  noun?: string;
+  /** Optional colored lead cell rendered before the label (e.g. the HTTP method). */
+  leadOf?: (t: T) => { text: string; color?: string } | undefined;
   groupOf?: (t: T) => string | undefined;
   header?: string;
   placeholder?: string;
@@ -21,13 +25,22 @@ export interface SearchableListProps<T> {
   onAction: (action: Action, item: T | undefined) => void;
 }
 
-function Row<T>({ entry, selected, hint }: { entry: DisplayEntry<T>; selected: boolean; hint?: string }) {
+function Row<T>({
+  entry,
+  selected,
+  hint,
+  lead,
+}: {
+  entry: DisplayEntry<T>;
+  selected: boolean;
+  hint?: string;
+  lead?: { text: string; color?: string };
+}) {
   return (
     <Text wrap="truncate-end" color={selected ? 'cyan' : undefined}>
-      <Text color={selected ? 'cyan' : undefined}>
-        {selected ? '❯ ' : '  '}
-        {entry.label}
-      </Text>
+      <Text color={selected ? 'cyan' : undefined}>{selected ? '❯ ' : '  '}</Text>
+      {lead ? <Text color={lead.color}>{lead.text}</Text> : null}
+      <Text color={selected ? 'cyan' : undefined}>{entry.label}</Text>
       {hint ? <Text dimColor>{'  '}{hint}</Text> : null}
     </Text>
   );
@@ -45,6 +58,8 @@ export function SearchableList<T>({
   keyOf,
   labelOf,
   hintOf,
+  noun,
+  leadOf,
   groupOf,
   header,
   placeholder = 'press / to filter',
@@ -144,11 +159,18 @@ export function SearchableList<T>({
             {entry.label}
           </Text>
         ) : (
-          <Row key={`i${i}`} entry={entry} selected={entry.item === selected} hint={hintOf?.(entry.item as T)} />
+          <Row
+            key={`i${i}`}
+            entry={entry}
+            selected={entry.item === selected}
+            hint={hintOf?.(entry.item as T)}
+            lead={leadOf?.(entry.item as T)}
+          />
         ),
       )}
       <Text dimColor>
         {filtered.length === items.length ? `${items.length}` : `${filtered.length}/${items.length}`}
+        {noun ? ` ${noun}` : ''}
         {start > 0 ? ' ↑' : ''}
         {end < filtered.length ? ' ↓' : ''}
         {filtering ? '' : '   [/] filter'}

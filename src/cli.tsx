@@ -84,12 +84,26 @@ const fileHint = (f: ScannedFile) =>
 const fileKey = (f: ScannedFile) => `${f.source} ${f.relPath}`;
 const fileLabel = (f: ScannedFile) => path.basename(f.file);
 const reqKey = (r: HttpRequest) => `${r.method} ${r.url} ${r.name}`;
-const reqLabel = (r: HttpRequest) => `${r.method} ${r.url}`;
+const reqLabel = (r: HttpRequest) => r.url;
 const reqHint = (r: HttpRequest) => (r.name !== 'default' ? r.name : undefined);
 const searchKey = (r: IndexedRequest) => `${r.method} ${r.url} ${r.name} ${r.relPath}`;
 const searchHint = (r: IndexedRequest) => `${r.relPath}${r.name !== 'default' ? ` · ${r.name}` : ''}`;
 const historyKey = (e: HistoryEntry) => `${e.method} ${e.url} ${e.name}`;
-const historyLabel = (e: HistoryEntry) => `${e.method} ${e.url}`;
+const historyLabel = (e: HistoryEntry) => e.url;
+
+// Semantic method colors (the Postman/HTTPie convention) — identity, not decoration.
+const METHOD_COLOR: Record<string, string> = {
+  GET: 'green',
+  POST: 'yellow',
+  PUT: 'cyan',
+  PATCH: 'cyan',
+  DELETE: 'red',
+  GRPC: 'magenta',
+};
+const methodLead = (method: string) => ({ text: method.padEnd(7), color: METHOD_COLOR[method] ?? 'cyan' });
+const reqLead = (r: HttpRequest) => methodLead(r.method);
+const searchLead = (r: IndexedRequest) => methodLead(r.method);
+const historyLead = (e: HistoryEntry) => methodLead(e.method);
 const historyHint = (e: HistoryEntry) => `${e.ok ? '✓' : '✗'} ${e.status ?? '?'}  ${e.name}`;
 const envLabel = (n: string) => n;
 
@@ -595,6 +609,8 @@ function App({ initialFile }: { initialFile?: string }) {
         keyOf={historyKey}
         labelOf={historyLabel}
         hintOf={historyHint}
+        noun="runs"
+        leadOf={historyLead}
         onAction={historyAction}
       />
     );
@@ -610,6 +626,7 @@ function App({ initialFile }: { initialFile?: string }) {
         items={envNames}
         keyOf={envLabel}
         labelOf={envLabel}
+        noun="environments"
         onAction={envAction}
       />
     );
@@ -627,6 +644,7 @@ function App({ initialFile }: { initialFile?: string }) {
         labelOf={fileLabel}
         hintOf={fileHint}
         groupOf={fileGroup}
+        noun="files"
         onAction={fileAction}
       />
     );
@@ -644,6 +662,8 @@ function App({ initialFile }: { initialFile?: string }) {
         keyOf={reqKey}
         labelOf={reqLabel}
         hintOf={reqHint}
+        noun="requests"
+        leadOf={reqLead}
         onAction={requestAction}
       />
     );
@@ -660,6 +680,8 @@ function App({ initialFile }: { initialFile?: string }) {
         keyOf={searchKey}
         labelOf={reqLabel}
         hintOf={searchHint}
+        noun="requests"
+        leadOf={searchLead}
         onAction={searchAction}
       />
     );
