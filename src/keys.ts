@@ -112,7 +112,11 @@ const PER_STEP: Partial<Record<Step, Record<Chord, Action>>> = {
   history: {},
   env: { 'ctrl-e': 'edit' },
   headers: { a: 'add-header', d: 'delete-header' },
-  preview: { 'ctrl-e': 'edit-preview' },
+  preview: {
+    'ctrl-e': 'edit-preview',
+    y: 'copy-body',
+    Y: 'copy-curl',
+  },
   import: { o: 'overwrite' },
   error: { r: 'run', R: 'chain', 'ctrl-e': 'edit' },
   result: {
@@ -123,8 +127,6 @@ const PER_STEP: Partial<Record<Step, Record<Chord, Action>>> = {
     '/': 'search-body',
     v: 'vars',
     t: 'history',
-    y: 'copy-body',
-    Y: 'copy-curl',
     w: 'save',
   },
 };

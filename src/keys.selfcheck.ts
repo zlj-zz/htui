@@ -54,6 +54,12 @@ assert.equal(resolveKey('result', 'h'), 'fold-headers');
 assert.equal(resolveKey('result', '/'), 'search-body');
 assert.ok(hintsFor('result').some((h) => h.key === '/' && h.label === 'search body'));
 
+// copy actions live on the preview screen now, not the list or result
+assert.equal(resolveKey('request', 'y'), null);
+assert.equal(resolveKey('result', 'y'), null);
+assert.equal(resolveKey('preview', 'y'), 'copy-body');
+assert.equal(resolveKey('preview', 'Y'), 'copy-curl');
+
 // scopes deliberately left narrow (not globalised)
 assert.equal(resolveKey('search', 'r'), null);
 assert.equal(resolveKey('result', 's'), null);

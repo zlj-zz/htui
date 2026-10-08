@@ -150,6 +150,22 @@ export async function collectEnvNames(startDir: string): Promise<{ names: string
   return { names: [...names].sort(), files };
 }
 
+/** Values for `envName` from every http-client.env.json up the tree (nearest wins). */
+export async function readEnvVars(startDir: string, envName: string): Promise<EnvVars> {
+  const files = await findEnvFiles(startDir); // nearest-first
+  const vars: EnvVars = {};
+  // farthest first, so nearer files override
+  for (const file of [...files].reverse()) {
+    try {
+      const env = JSON.parse(await readFile(file, 'utf8')) as Record<string, EnvVars>;
+      Object.assign(vars, env[envName] ?? {});
+    } catch {
+      // unreadable env files are reported by the import/merge paths
+    }
+  }
+  return vars;
+}
+
 /**
  * Write `vars` into `envName`, filling only missing keys so a re-import never
  * clobbers a value the user edited. `forceKeys` are written regardless

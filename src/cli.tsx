@@ -11,7 +11,7 @@ import { hasResponse, isOk, testIcon, type HttpyacRequestResult, type TestResult
 import { runChain, type ChainEntry } from './chain';
 import { httpyacOnPath, HTTPYAC_INSTALL_HINT, isAbort, runRequest } from './run';
 import { buildWorkspace, listFiles, type IndexedRequest, type ScannedFile } from './workspace';
-import { collectEnvNames } from './store';
+import { collectEnvNames, readEnvVars } from './store';
 import { modelSlice, parseRegionText, regionText, requestModel, type RequestModel } from './request';
 import { openEditor } from './editor';
 import { copyToTerminal, toCurl } from './share';
@@ -26,6 +26,7 @@ import { Banner } from './ui/Banner';
 import { Help } from './ui/Help';
 import { HeaderForm } from './ui/HeaderForm';
 import { RequestPreview } from './ui/RequestPreview';
+import { fileVars, resolveVars } from './vars';
 
 function statusColor(code?: number): string | undefined {
   if (code == null) return undefined;
@@ -392,6 +393,69 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
     }
   }
 
+  /** Variables a copied command can resolve: env file, then the file's own @vars. */
+  async function previewVars(file: string): Promise<Record<string, string>> {
+    const content = await readFile(file, 'utf8');
+    return { ...(await readEnvVars(path.dirname(file), activeEnv)), ...fileVars(content) };
+  }
+
+  /** Copy as curl with variables resolved — the command must be runnable as-is. */
+  async function copyPreviewCurl() {
+    if (!preview) return;
+    try {
+      const { file, model } = preview;
+      const vars = await previewVars(file);
+      const unresolved = new Set<string>();
+
+      const url = resolveVars(model.url, vars);
+      url.unresolved.forEach((u) => unresolved.add(u));
+
+      const headers: Record<string, string> = {};
+      for (const h of model.headers) {
+        const value = resolveVars(h.value, vars);
+        value.unresolved.forEach((u) => unresolved.add(u));
+        headers[h.name] = value.text;
+      }
+
+      const body = model.body ? resolveVars(model.body, vars) : undefined;
+      body?.unresolved.forEach((u) => unresolved.add(u));
+
+      const res = copyToTerminal(toCurl({ method: model.method, url: url.text, headers, body: body?.text || undefined }));
+      setNotice(
+        !res.ok
+          ? 'command too large for the clipboard'
+          : unresolved.size
+            ? `copied curl — unresolved: ${[...unresolved].join(', ')}`
+            : 'copied curl (may contain credentials)',
+      );
+    } catch (err: unknown) {
+      fail(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  /** Copy the request body with variables resolved. */
+  async function copyPreviewBody() {
+    if (!preview) return;
+    try {
+      const { file, model } = preview;
+      if (!model.body) {
+        setNotice('this request has no body');
+        return;
+      }
+      const resolved = resolveVars(model.body, await previewVars(file));
+      const res = copyToTerminal(resolved.text);
+      setNotice(
+        !res.ok
+          ? 'copy failed'
+          : resolved.unresolved.length
+            ? `copied request body — unresolved: ${resolved.unresolved.join(', ')}`
+            : `copied request body (${res.bytes} chars)`,
+      );
+    } catch (err: unknown) {
+      fail(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   async function editPreview() {
     if (!preview) return;
     const tmp = path.join(os.tmpdir(), `htui-preview-${randomUUID()}.http`);
@@ -493,20 +557,7 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
       setStep('history');
     } else if (action === 'fold-headers') setShowHeaders((v) => !v);
     else if (action === 'search-body') setBodySearching(true);
-    else if (action === 'copy-body' && result) {
-      const r = copyToTerminal(rawBody(result));
-      setNotice(r.ok ? `copied ${r.bytes} bytes` : 'body too large for the clipboard — press w to save it');
-    } else if (action === 'copy-curl' && result && picked) {
-      const sent = result.response?.request;
-      const curl = toCurl({
-        method: sent?.method ?? picked.req.method,
-        url: sent?.url ?? picked.req.url,
-        headers: sent?.headers,
-        body: typeof sent?.body === 'string' ? sent.body : undefined,
-      });
-      const r = copyToTerminal(curl);
-      setNotice(r.ok ? 'copied curl (may contain credentials)' : 'command too large for the clipboard');
-    } else if (action === 'save' && result) void saveBody(result);
+    else if (action === 'save' && result) void saveBody(result);
   }
 
   function openHelp(from: Step) {
@@ -621,6 +672,8 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
               preview.edited ? { model: preview.model } : {},
             );
           else if (action === 'edit-preview') void editPreview();
+          else if (action === 'copy-body') void copyPreviewBody();
+          else if (action === 'copy-curl') void copyPreviewCurl();
           else if (action === 'back') setStep(previewReturn);
           else appAction(action);
         }}

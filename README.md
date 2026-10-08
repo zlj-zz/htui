@@ -45,6 +45,7 @@ preview, and run it like any other request. Requires a TTY.
 | any list | `↑` `↓` | move · `Enter` open / preview |
 | requests, search | `Enter` | preview the request (JSON) before sending |
 | preview | `Ctrl-E` | edit this request as `.http` text in `$EDITOR` (this send only, not saved) |
+| preview | `y` / `Y` | copy the request body / copy the request as curl |
 | preview | `Enter` | send as shown |
 | any list | `Esc` | clear filter, else go back |
 | any list | `Ctrl-E` | edit the highlighted request in `$EDITOR` |
@@ -54,7 +55,7 @@ preview, and run it like any other request. Requires a TTY.
 | any list | `s` | switch environment |
 | requests | `r` / `R` | run now (skip the preview) / run with prerequisites (chain) |
 | any list | `Ctrl-F` | search requests across all files |
-| result | `r`/`R` run · `Ctrl-E` edit · `/` search body · `v` vars · `t` history · `y`/`Y` copy · `w` save · `h` headers · `Esc` back · `q` quit | |
+| result | `r`/`R` run · `Ctrl-E` edit · `/` search body · `v` vars · `t` history · `w` save · `h` headers · `Esc` back · `q` quit | |
 | sending | `Esc` | cancel the in-flight request (kills the child) |
 
 ## Importing OpenAPI
