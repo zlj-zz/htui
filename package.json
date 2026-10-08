@@ -20,7 +20,8 @@
   },
   "files": [
     "dist",
-    "examples"
+    "examples",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "dev": "tsx src/cli.tsx",
