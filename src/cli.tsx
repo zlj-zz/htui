@@ -2,7 +2,7 @@
 import { Box, Text, render, useApp, useInput } from 'ink';
 import { Spinner } from '@inkjs/ui';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
@@ -13,7 +13,7 @@ import { runChain, type ChainEntry } from './chain';
 import { httpyacOnPath, HTTPYAC_INSTALL_HINT, isAbort, runRequest } from './run';
 import { buildWorkspace, listFiles, type IndexedRequest, type ScannedFile } from './workspace';
 import { collectEnvNames, readEnvVars, readRecency, writeRecency, type Recency } from './store';
-import { modelSlice, parseRegionText, regionText, requestModel, type RequestModel } from './request';
+import { modelSlice, parseRegionText, regionText, replaceRegion, requestModel, type RequestModel } from './request';
 import { openEditor } from './editor';
 import { copyToTerminal, toCurl } from './share';
 import { importCommand, listCommand, parseFlags, printHelp, printVersion, removeCommand, sendCommand } from './commands';
@@ -64,8 +64,16 @@ function rawBody(result: HttpyacRequestResult | null): string {
 
 async function writeFileAtomic(file: string, content: string): Promise<void> {
   const tmp = `${file}.${randomUUID()}.tmp`;
+  // Rename replaces the file, so carry the original mode over or a 600 `.http`
+  // (it can hold secrets) would widen to the umask default.
+  let mode: number | undefined;
   try {
-    await writeFile(tmp, content, 'utf8');
+    mode = (await stat(file)).mode;
+  } catch {
+    mode = undefined; // new file: let the umask decide
+  }
+  try {
+    await writeFile(tmp, content, mode === undefined ? 'utf8' : { encoding: 'utf8', mode });
     await rename(tmp, file);
   } finally {
     await rm(tmp, { force: true });
@@ -502,6 +510,30 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
     }
   }
 
+  /** Ctrl-S on the preview: write the edited region back to the `.http` file. */
+  async function savePreview() {
+    if (!preview) return;
+    const { file, req, model } = preview;
+    // A `###` line inside the body would be parsed as a new region on reload.
+    if (model.body.split('\n').some((line) => /^#{3,}/.test(line))) {
+      setPreview((p) => (p ? { ...p, error: 'body has a "###" line — use Ctrl-E ($EDITOR) to make this change' } : p));
+      return;
+    }
+    try {
+      const content = await readFile(file, 'utf8');
+      await writeFileAtomic(file, replaceRegion(content, req, model));
+      // The request line stays put, so `startLine` is stable across the rewrite.
+      const next = parseRequests(await readFile(file, 'utf8')).find((r) => r.startLine === req.startLine);
+      setPreview((p) =>
+        p ? { ...p, req: next ?? p.req, edited: false, error: next ? '' : 'saved, but the region moved — reopen the file' } : p,
+      );
+      setRefresh((n) => n + 1);
+      showNotice(`saved ${path.basename(file)}`, 'info');
+    } catch (err: unknown) {
+      setPreview((p) => (p ? { ...p, error: err instanceof Error ? err.message : String(err) } : p));
+    }
+  }
+
   // Each screen's keys are resolved by the shared map (src/keys.ts); these
   // handlers only say what a given action means *on this screen*.
   function appAction(action: Action): boolean {
@@ -697,6 +729,8 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
         edited={preview.edited}
         error={preview.error}
         notice={notice}
+        onModel={(model) => setPreview((p) => (p ? { ...p, model, edited: true, error: '' } : p))}
+        onSave={() => void savePreview()}
         onAction={(action) => {
           if (action === 'send')
             void send(

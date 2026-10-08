@@ -19,7 +19,7 @@ export interface RequestModel {
 }
 
 const BLANK_RE = /^\s*$/;
-const REQUEST_LINE_RE = /^\s*([A-Za-z]+)\s+(\S+)\s*$/;
+export const REQUEST_LINE_RE = /^\s*([A-Za-z]+)\s+(\S+)\s*$/;
 
 /** Where the body starts and the region ends (0-based line indices). */
 function boundary(lines: string[], req: HttpRequest): { bodyStart: number; regionEnd: number } {
@@ -88,6 +88,26 @@ export function modelSlice(content: string, req: HttpRequest, model: RequestMode
     ...model.headers.map((h) => `${h.name}: ${h.value}`),
     ...body,
   ].join('\n') + '\n';
+}
+
+/**
+ * Write `model` back over the target region, in place. Everything above the
+ * request line (the `###` / `# @name` preamble and any comments) and every line
+ * after the region are preserved, including the blank lines that separate this
+ * region from the next `###`. This is the in-place preview edit's one write path.
+ */
+export function replaceRegion(content: string, req: HttpRequest, model: RequestModel): string {
+  const eol = content.includes('\r\n') ? '\r\n' : '\n';
+  const lines = content.split(/\r?\n/);
+  const start = req.line - 1; // 0-based request line; the preamble stays above it
+  const end = req.endLine - 1; // 0-based last line of the region
+  // Trailing blank lines belong to this region (the parser ends it right before
+  // the next `###`) — keep them, or the next region would glue onto the body.
+  let contentEnd = end;
+  while (contentEnd >= start && BLANK_RE.test(lines[contentEnd] ?? '')) contentEnd--;
+  const trailing = lines.slice(contentEnd + 1, end + 1);
+  const region = regionText(model).replace(/\n$/, '').split('\n');
+  return [...lines.slice(0, start), ...region, ...trailing, ...lines.slice(end + 1)].join(eol);
 }
 
 /** Append a region for `model` (with `### name` + `# @name`) to `content`.

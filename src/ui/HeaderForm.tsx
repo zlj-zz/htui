@@ -1,15 +1,17 @@
 import { TextInput } from '@inkjs/ui';
 import { Box, Text, useInput } from 'ink';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { parseHeaders, withHeaders, type Header } from '../httpfile';
 import type { Notice } from '../notice';
 import { chordOf, resolveKey, type Action } from '../keys';
-import type { HttpRequest } from '../parse';
+import { parseRequests, type HttpRequest } from '../parse';
 import { SearchableList } from './SearchableList';
 
 /**
  * View and edit a request's headers. Writes back to the `.http` file; the
  * editor (or the file) stays the source of truth — no hidden request state.
+ * `i` reuses headers from another request in the same file (a name you already
+ * have is left untouched, so an explicit value is never overwritten).
  */
 export function HeaderForm({
   content,
@@ -30,6 +32,12 @@ export function HeaderForm({
   // undefined = list mode, null = adding, a Header = editing that one
   const [editing, setEditing] = useState<Header | null | undefined>(undefined);
   const [error, setError] = useState('');
+  const [importing, setImporting] = useState(false);
+  // Other regions in the same file — the pool for "reuse headers".
+  const siblings = useMemo(
+    () => parseRequests(content).filter((r) => r.startLine !== req.startLine),
+    [content, req.startLine],
+  );
 
   async function commit(next: Header[]) {
     setHeaders(next);
@@ -45,6 +53,38 @@ export function HeaderForm({
     },
     { isActive: editing !== undefined },
   );
+
+  if (importing) {
+    return (
+      <SearchableList
+        step="pick-headers"
+        header={`Reuse headers from…  (${siblings.length} other request${siblings.length === 1 ? '' : 's'})`}
+        placeholder="filter requests…"
+        noun="requests"
+        notice={notice}
+        items={siblings}
+        keyOf={(r) => `${r.startLine} ${r.name}`}
+        labelOf={(r) => `${r.method} ${r.url}`}
+        hintOf={(r) => (r.name !== 'default' ? r.name : undefined)}
+        onAction={(action, r) => {
+          if (action === 'open' && r) {
+            // Merge in only names we do not already have; never overwrite a value.
+            const have = new Set(headers.map((h) => h.name.toLowerCase()));
+            const add: Header[] = [];
+            for (const h of parseHeaders(content, r)) {
+              const key = h.name.toLowerCase();
+              if (have.has(key)) continue;
+              have.add(key);
+              add.push(h);
+            }
+            void commit([...headers, ...add]);
+            setImporting(false);
+          } else if (action === 'back') setImporting(false);
+          else onAction(action);
+        }}
+      />
+    );
+  }
 
   if (editing !== undefined) {
     return (
@@ -96,6 +136,8 @@ export function HeaderForm({
           setEditing(h);
         } else if (action === 'delete-header' && h) {
           void commit(headers.filter((x) => x !== h));
+        } else if (action === 'import-headers') {
+          setImporting(true);
         } else {
           onAction(action);
         }

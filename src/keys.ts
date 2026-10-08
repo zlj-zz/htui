@@ -18,6 +18,7 @@ export type Step =
   | 'new'
   | 'env'
   | 'headers'
+  | 'pick-headers'
   | 'preview'
   | 'sending'
   | 'result'
@@ -52,6 +53,8 @@ export type Action =
   | 'add-header'
   | 'edit-header'
   | 'delete-header'
+  | 'edit-field'
+  | 'import-headers'
   | 'overwrite';
 
 /** Normalized key chord: `a`, `R`, `?`, `enter`, `escape`, `ctrl-e`. */
@@ -89,6 +92,7 @@ const PRIMARY: Partial<Record<Step, Action>> = {
   history: 'resend',
   env: 'select-env',
   headers: 'edit-header',
+  'pick-headers': 'open',
   preview: 'send',
 };
 
@@ -111,9 +115,13 @@ const PER_STEP: Partial<Record<Step, Record<Chord, Action>>> = {
   search: {},
   history: {},
   env: { 'ctrl-e': 'edit' },
-  headers: { a: 'add-header', d: 'delete-header' },
+  headers: { a: 'add-header', d: 'delete-header', i: 'import-headers' },
   preview: {
     'ctrl-e': 'edit-preview',
+    e: 'edit-field',
+    a: 'add-header',
+    d: 'delete-header',
+    'ctrl-s': 'save',
     y: 'copy-body',
     Y: 'copy-curl',
   },
@@ -164,6 +172,8 @@ export const ACTION_LABEL: Record<Action, string> = {
   'add-header': 'add',
   'edit-header': 'edit',
   'delete-header': 'delete',
+  'edit-field': 'edit line',
+  'import-headers': 'reuse headers',
   overwrite: 'overwrite',
 };
 

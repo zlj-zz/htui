@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { appendRegion, modelSlice, parseRegionText, regionText, requestModel } from './request';
+import { appendRegion, modelSlice, parseRegionText, regionText, replaceRegion, requestModel } from './request';
 import { parseRequests } from './parse';
 
 const content = [
@@ -84,5 +84,42 @@ const grown = appendRegion(
 assert.equal(parseRequests(grown).length, 2);
 assert.ok(grown.includes('### new-request')); // the first region is untouched
 assert.ok(grown.includes('{"a":1}'));
+
+// replaceRegion: in-place write-back keeps the preamble and every other region
+const saved = replaceRegion(content, me, edited);
+assert.match(saved, /^@host = http:\/\/x/); // file preamble kept
+assert.match(saved, /### me/); // region preamble (### / @name) kept
+assert.match(saved, /### login/); // earlier region untouched
+assert.match(saved, /POST https:\/\/other\/x\?q=1/);
+assert.ok(saved.includes(jsonBody)); // body verbatim
+assert.doesNotMatch(saved, /Bearer/); // old header replaced, not appended
+assert.ok(parseRequests(saved).some((r) => r.name === 'me')); // still re-parses
+
+// a middle region: the blank line before the next `###` must survive
+const two = ['### a', 'GET http://x/a', '', '### b', 'GET http://x/b', ''].join('\n');
+const a = parseRequests(two).find((r) => r.name === 'a');
+assert.ok(a);
+assert.equal(
+  replaceRegion(two, a, { method: 'GET', url: 'http://x/a2', headers: [], body: '' }),
+  ['### a', 'GET http://x/a2', '', '### b', 'GET http://x/b', ''].join('\n'),
+);
+
+// a whole-file request (no `###`, startLine = 1)
+const whole = 'GET http://x/y\nX: 1\n';
+const w = parseRequests(whole)[0];
+assert.ok(w);
+assert.equal(
+  replaceRegion(whole, w, { method: 'POST', url: 'http://x/z', headers: [{ name: 'A', value: 'b' }], body: '' }),
+  'POST http://x/z\nA: b\n',
+);
+
+// CRLF files keep CRLF
+const crlf = '### a\r\nGET http://x/a\r\nX: 1\r\n';
+const ca = parseRequests(crlf)[0];
+assert.ok(ca);
+assert.equal(
+  replaceRegion(crlf, ca, { method: 'GET', url: 'http://x/a', headers: [{ name: 'X', value: '2' }], body: '' }),
+  '### a\r\nGET http://x/a\r\nX: 2\r\n',
+);
 
 console.log('request.selfcheck: ok');

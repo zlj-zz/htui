@@ -12,7 +12,7 @@ assert.equal(chordOf('\u001B[<64;1;1M', {}), null); // a mouse sequence — the 
 
 // globals hold on every screen, forms included
 const steps: Step[] = [
-  'file', 'request', 'search', 'import', 'env', 'headers', 'preview',
+  'file', 'request', 'search', 'import', 'env', 'headers', 'pick-headers', 'preview',
   'sending', 'result', 'history', 'help', 'error',
 ];
 for (const step of steps) {
@@ -31,7 +31,7 @@ assert.equal(resolveKey('history', 'enter'), 'resend');
 assert.equal(resolveKey('env', 'enter'), 'select-env');
 assert.equal(resolveKey('result', 'enter'), null);
 
-// edit is Ctrl-E wherever it exists, and the old bare `e` is gone
+// edit is Ctrl-E wherever it exists; the light line edit `e` lives on preview only
 assert.equal(resolveKey('file', 'ctrl-e'), 'edit');
 assert.equal(resolveKey('request', 'ctrl-e'), 'edit');
 assert.equal(resolveKey('env', 'ctrl-e'), 'edit');
@@ -39,6 +39,15 @@ assert.equal(resolveKey('result', 'ctrl-e'), 'edit');
 assert.equal(resolveKey('preview', 'ctrl-e'), 'edit-preview');
 assert.equal(resolveKey('request', 'e'), null);
 assert.equal(resolveKey('result', 'e'), null);
+assert.equal(resolveKey('preview', 'e'), 'edit-field');
+assert.equal(resolveKey('preview', 'a'), 'add-header');
+assert.equal(resolveKey('preview', 'd'), 'delete-header');
+assert.equal(resolveKey('preview', 'ctrl-s'), 'save'); // write the region back
+
+// header reuse: the picker gets its own step so `Enter` means pick
+assert.equal(resolveKey('headers', 'i'), 'import-headers');
+assert.equal(resolveKey('pick-headers', 'enter'), 'open');
+assert.equal(resolveKey('pick-headers', 'escape'), 'back');
 
 // run / chain are the same key on the request list and the result screen
 assert.equal(resolveKey('request', 'r'), 'run');
