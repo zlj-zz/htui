@@ -29,7 +29,7 @@
     "start": "node dist/cli.js",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run typecheck && npm run check && npm run build",
-    "check": "tsx src/parse.selfcheck.ts && tsx src/rows.selfcheck.ts && tsx src/store.selfcheck.ts && tsx src/openapi.selfcheck.ts && tsx src/swagger2.selfcheck.ts && tsx src/result.selfcheck.ts && tsx src/chain.selfcheck.ts && tsx src/run.selfcheck.ts && tsx src/editor.selfcheck.ts && tsx src/share.selfcheck.ts && tsx src/commands.selfcheck.ts && tsx src/workspace.selfcheck.ts && tsx src/httpfile.selfcheck.ts && tsx src/mouse.selfcheck.ts && tsx src/request.selfcheck.ts && tsx src/keys.selfcheck.ts && tsx src/proto.selfcheck.ts && tsx src/vars.selfcheck.ts",
+    "check": "tsx src/parse.selfcheck.ts && tsx src/rows.selfcheck.ts && tsx src/store.selfcheck.ts && tsx src/openapi.selfcheck.ts && tsx src/swagger2.selfcheck.ts && tsx src/result.selfcheck.ts && tsx src/chain.selfcheck.ts && tsx src/run.selfcheck.ts && tsx src/editor.selfcheck.ts && tsx src/share.selfcheck.ts && tsx src/commands.selfcheck.ts && tsx src/workspace.selfcheck.ts && tsx src/httpfile.selfcheck.ts && tsx src/mouse.selfcheck.ts && tsx src/request.selfcheck.ts && tsx src/keys.selfcheck.ts && tsx src/proto.selfcheck.ts && tsx src/vars.selfcheck.ts && tsx src/notice.selfcheck.ts",
     "e2e": "tsx src/import.e2e.ts && tsx src/chain.e2e.ts && tsx src/run.e2e.ts"
   },
   "keywords": [

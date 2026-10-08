@@ -6,6 +6,7 @@ import { readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
+import { isStaleGeneration, noticeTtl, type Notice, type NoticeKind } from './notice';
 import { parseRequests, type HttpRequest } from './parse';
 import { hasResponse, isOk, testIcon, type HttpyacRequestResult, type TestResult } from './result';
 import { runChain, type ChainEntry } from './chain';
@@ -154,7 +155,19 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
   const [result, setResult] = useState<HttpyacRequestResult | null>(null);
   const [prereqs, setPrereqs] = useState<ChainEntry[]>([]);
   const [showHeaders, setShowHeaders] = useState(false);
-  const [notice, setNotice] = useState('');
+  const [notice, setNotice] = useState<Notice | null>(null);
+  const noticeGen = useRef(0);
+
+  /** Feedback policy: acknowledgements fade, warnings stay until the next action. */
+  function showNotice(text: string, kind: NoticeKind = 'info') {
+    const generation = (noticeGen.current += 1);
+    setNotice({ text, kind });
+    const ttl = noticeTtl(kind);
+    if (ttl === null) return;
+    setTimeout(() => {
+      if (!isStaleGeneration(generation, noticeGen.current)) setNotice(null);
+    }, ttl);
+  }
   const [bodySearching, setBodySearching] = useState(false);
   const [bodyQuery, setBodyQuery] = useState('');
 
@@ -273,7 +286,7 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
     setError('');
     setPrereqs([]);
     setShowHeaders(false);
-    setNotice('');
+    setNotice(null);
     setBodyQuery('');
     setBodySearching(false);
     setStep('sending');
@@ -316,7 +329,7 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
       setStep('result');
     } catch (err: unknown) {
       if (isAbort(err)) {
-        setNotice('cancelled');
+        showNotice('cancelled', 'warn');
         setStep(resultReturn());
         return;
       }
@@ -333,6 +346,7 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
       return;
     }
     setRefresh((n) => n + 1); // re-read the file after editing
+    showNotice(`reloaded ${path.basename(filePath)}`, 'info');
   }
 
   async function editEnv(envPath: string) {
@@ -343,15 +357,16 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
       return;
     }
     setRefresh((n) => n + 1);
+    showNotice(`updated ${path.basename(envPath)}`, 'info');
   }
 
   async function saveBody(result: HttpyacRequestResult) {
     const target = path.join(os.tmpdir(), `htui-body-${Date.now()}.json`);
     try {
       await writeFile(target, rawBody(result), { encoding: 'utf8', mode: 0o600 });
-      setNotice(`saved ${target}`);
+      showNotice(`saved ${target}`, 'info');
     } catch (err: unknown) {
-      setNotice(`save failed: ${err instanceof Error ? err.message : String(err)}`);
+      showNotice(`save failed: ${err instanceof Error ? err.message : String(err)}`, 'warn');
     }
   }
 
@@ -387,6 +402,7 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
       const content = await readFile(filePath, 'utf8');
       setPreview({ file: filePath, req, model: requestModel(content, req), edited: false, error: '' });
       setPreviewReturn(from);
+      setNotice(null);
       setStep('preview');
     } catch (err: unknown) {
       fail(err instanceof Error ? err.message : String(err));
@@ -421,13 +437,9 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
       body?.unresolved.forEach((u) => unresolved.add(u));
 
       const res = copyToTerminal(toCurl({ method: model.method, url: url.text, headers, body: body?.text || undefined }));
-      setNotice(
-        !res.ok
-          ? 'command too large for the clipboard'
-          : unresolved.size
-            ? `copied curl — unresolved: ${[...unresolved].join(', ')}`
-            : 'copied curl (may contain credentials)',
-      );
+      if (!res.ok) showNotice('command too large for the clipboard', 'warn');
+      else if (unresolved.size) showNotice(`copied curl — unresolved: ${[...unresolved].join(', ')}`, 'warn');
+      else showNotice('copied curl (may contain credentials)', 'info');
     } catch (err: unknown) {
       fail(err instanceof Error ? err.message : String(err));
     }
@@ -439,18 +451,14 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
     try {
       const { file, model } = preview;
       if (!model.body) {
-        setNotice('this request has no body');
+        showNotice('this request has no body', 'warn');
         return;
       }
       const resolved = resolveVars(model.body, await previewVars(file));
       const res = copyToTerminal(resolved.text);
-      setNotice(
-        !res.ok
-          ? 'copy failed'
-          : resolved.unresolved.length
-            ? `copied request body — unresolved: ${resolved.unresolved.join(', ')}`
-            : `copied request body (${res.bytes} chars)`,
-      );
+      if (!res.ok) showNotice('copy failed', 'warn');
+      else if (resolved.unresolved.length) showNotice(`copied request body — unresolved: ${resolved.unresolved.join(', ')}`, 'warn');
+      else showNotice(`copied request body (${res.bytes} chars)`, 'info');
     } catch (err: unknown) {
       fail(err instanceof Error ? err.message : String(err));
     }
@@ -458,6 +466,7 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
 
   async function editPreview() {
     if (!preview) return;
+    setNotice(null);
     const tmp = path.join(os.tmpdir(), `htui-preview-${randomUUID()}.http`);
     try {
       await writeFile(tmp, regionText(preview.model), 'utf8');
@@ -644,10 +653,12 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
       <HeaderForm
         content={headerCtx.content}
         req={headerCtx.req}
+        notice={notice}
         onSave={async (next) => {
           await writeFileAtomic(headerCtx.file, next);
           setHeaderCtx({ ...headerCtx, content: next });
           setRefresh((n) => n + 1);
+          showNotice(`headers saved to ${path.basename(headerCtx.file)}`, 'info');
         }}
         onAction={(action) => {
           if (action === 'back') setStep(headerReturn);
@@ -664,6 +675,7 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
         model={preview.model}
         edited={preview.edited}
         error={preview.error}
+        notice={notice}
         onAction={(action) => {
           if (action === 'send')
             void send(
@@ -713,6 +725,7 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
         leadOf={historyLead}
         restore={remember.history}
         onRemember={(key, query) => rememberStep('history', key, query)}
+        notice={notice}
         onAction={historyAction}
       />
     );
@@ -731,6 +744,7 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
         noun="environments"
         restore={remember.env}
         onRemember={(key, query) => rememberStep('env', key, query)}
+        notice={notice}
         onAction={envAction}
       />
     );
@@ -753,6 +767,7 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
           noun="files"
           restore={remember.file}
           onRemember={(key, query) => rememberStep('file', key, query)}
+          notice={notice}
           onAction={fileAction}
         />
       </Box>
@@ -776,6 +791,7 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
         groupOf={requestGroup}
         restore={remember.request}
         onRemember={(key, query) => rememberStep('request', key, query)}
+        notice={notice}
         onAction={requestAction}
       />
     );
@@ -796,6 +812,7 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
         leadOf={searchLead}
         restore={remember.search}
         onRemember={(key, query) => rememberStep('search', key, query)}
+        notice={notice}
         onAction={searchAction}
       />
     );
@@ -878,7 +895,7 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
         </Box>
       ) : null}
 
-      {notice ? <Text color="cyan">{notice}</Text> : null}
+      <Text color={notice?.kind === 'warn' ? 'yellow' : 'cyan'}>{notice?.text ?? ' '}</Text>
       <Box marginTop={1} flexDirection="column">
         <Hints step="result" />
       </Box>

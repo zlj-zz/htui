@@ -1,6 +1,7 @@
 import { Box, Text, useInput } from 'ink';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { chordOf, resolveKey, type Action, type Step } from '../keys';
+import type { Notice } from '../notice';
 import { Hints } from './Hints';
 import { parseMouse, setMouse, WHEEL_DOWN, WHEEL_UP } from '../mouse';
 import { buildEntries, filterAndRank, viewport, type DisplayEntry } from '../rows';
@@ -14,6 +15,8 @@ export interface SearchableListProps<T> {
   hintOf?: (t: T) => string | undefined;
   /** Noun for the count line, e.g. "requests". */
   noun?: string;
+  /** Transient feedback (copy/save/edit confirmations) — shown above the count. */
+  notice?: Notice | null;
   /** Optional colored lead cell rendered before the label (e.g. the HTTP method). */
   leadOf?: (t: T) => { text: string; color?: string } | undefined;
   groupOf?: (t: T) => string | undefined;
@@ -63,6 +66,7 @@ export function SearchableList<T>({
   labelOf,
   hintOf,
   noun,
+  notice,
   leadOf,
   groupOf,
   header,
@@ -194,6 +198,7 @@ export function SearchableList<T>({
           />
         ),
       )}
+      <Text color={notice?.kind === 'warn' ? 'yellow' : 'cyan'}>{notice?.text ?? ' '}</Text>
       <Text dimColor>
         {filtered.length === items.length ? `${items.length}` : `${filtered.length}/${items.length}`}
         {noun ? ` ${noun}` : ''}

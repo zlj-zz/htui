@@ -1,4 +1,5 @@
 import { Box, Text, useInput } from 'ink';
+import type { Notice } from '../notice';
 import { chordOf, resolveKey, type Action } from '../keys';
 import { Hints } from './Hints';
 import { regionText, type RequestModel } from '../request';
@@ -14,11 +15,14 @@ export function RequestPreview({
   model,
   edited,
   error,
+  notice,
   onAction,
 }: {
   model: RequestModel;
   edited: boolean;
   error: string;
+  /** Transient feedback (copy/save confirmations) — rendered above the hints. */
+  notice?: Notice | null;
   onAction: (action: Action) => void;
 }) {
   useInput((input, key) => {
@@ -40,6 +44,7 @@ export function RequestPreview({
         <Text dimColor>… {lines.length - shown.length} more lines — Ctrl-E to see it all</Text>
       ) : null}
       {error ? <Text color="red">✗ {error}</Text> : null}
+      <Text color={notice?.kind === 'warn' ? 'yellow' : 'cyan'}>{notice?.text ?? ' '}</Text>
       <Hints step="preview" />
     </Box>
   );

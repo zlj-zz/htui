@@ -2,6 +2,7 @@ import { TextInput } from '@inkjs/ui';
 import { Box, Text, useInput } from 'ink';
 import { useState } from 'react';
 import { parseHeaders, withHeaders, type Header } from '../httpfile';
+import type { Notice } from '../notice';
 import { chordOf, resolveKey, type Action } from '../keys';
 import type { HttpRequest } from '../parse';
 import { SearchableList } from './SearchableList';
@@ -15,12 +16,15 @@ export function HeaderForm({
   req,
   onSave,
   onAction,
+  notice,
 }: {
   content: string;
   req: HttpRequest;
   onSave: (content: string) => Promise<void>;
   /** Actions this form does not own (back / help / quit) go to the app. */
   onAction: (action: Action) => void;
+  /** Transient feedback shown under the header list. */
+  notice?: Notice | null;
 }) {
   const [headers, setHeaders] = useState<Header[]>(() => parseHeaders(content, req));
   // undefined = list mode, null = adding, a Header = editing that one
@@ -79,6 +83,7 @@ export function HeaderForm({
       header={`Headers · ${req.method} ${req.url}  (${headers.length})`}
       placeholder="filter headers…"
       noun="headers"
+      notice={notice}
       items={headers}
       keyOf={(h) => h.name}
       labelOf={(h) => `${h.name}: ${h.value}`}
