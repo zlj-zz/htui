@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { collectionEnv, htuiHome, mergeEnv, readEnvNames, sanitizeName, slugify } from './store';
+import { collectionEnv, htuiHome, mergeEnv, readEnvNames, readRecency, recencyPath, sanitizeName, slugify, writeRecency } from './store';
 
 // --- pure: naming ---
 assert.equal(sanitizeName('petstore'), 'petstore');
@@ -46,6 +46,21 @@ try {
   assert.equal(forced.default.baseUrl, 'http://forced');
 } finally {
   await rm(home, { recursive: true, force: true });
+}
+
+// --- IO: recency (persisted request-list sort) round-trips and is fail-safe ---
+const recHome = await mkdtemp(path.join(os.tmpdir(), 'htui-recency-'));
+process.env.HTUI_HOME = recHome;
+try {
+  assert.deepEqual(await readRecency(), {}); // missing → {}
+  await writeRecency({ '/a.http': ['GET /x'] });
+  assert.deepEqual(await readRecency(), { '/a.http': ['GET /x'] });
+  await writeFile(recencyPath(), '{ not json');
+  assert.deepEqual(await readRecency(), {}); // corrupt → {}, no crash
+  await writeFile(recencyPath(), `${JSON.stringify({ '/a.http': ['GET /x'], nope: 3, mixed: ['ok', 7] })}\n`);
+  assert.deepEqual(await readRecency(), { '/a.http': ['GET /x'], mixed: ['ok'] }); // wrong shapes dropped
+} finally {
+  await rm(recHome, { recursive: true, force: true });
 }
 
 delete process.env.HTUI_HOME;

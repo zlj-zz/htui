@@ -200,3 +200,35 @@ export async function mergeEnv(
   await writeFile(file, `${JSON.stringify(env, null, 2)}\n`, 'utf8');
   return added;
 }
+
+// --- user-level recency: last-run order per file, so the request list's
+// recent-first sort survives restart ---
+
+export type Recency = Record<string, string[]>;
+
+export function recencyPath(): string {
+  return path.join(htuiHome(), 'recent.json');
+}
+
+export async function readRecency(): Promise<Recency> {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(await readFile(recencyPath(), 'utf8'));
+  } catch (err) {
+    // A missing file is fine; a corrupt one must not crash the TUI.
+    if (!isMissing(err)) process.stderr.write(`htui: ignoring unreadable ${recencyPath()}\n`);
+    return {};
+  }
+  const out: Recency = {};
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    for (const [file, list] of Object.entries(raw)) {
+      if (Array.isArray(list)) out[file] = list.filter((k): k is string => typeof k === 'string');
+    }
+  }
+  return out;
+}
+
+export async function writeRecency(recency: Recency): Promise<void> {
+  await mkdir(htuiHome(), { recursive: true });
+  await writeFile(recencyPath(), `${JSON.stringify(recency, null, 2)}\n`, 'utf8');
+}

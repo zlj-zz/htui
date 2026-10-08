@@ -12,7 +12,7 @@ import { hasResponse, isOk, testIcon, type HttpyacRequestResult, type TestResult
 import { runChain, type ChainEntry } from './chain';
 import { httpyacOnPath, HTTPYAC_INSTALL_HINT, isAbort, runRequest } from './run';
 import { buildWorkspace, listFiles, type IndexedRequest, type ScannedFile } from './workspace';
-import { collectEnvNames, readEnvVars } from './store';
+import { collectEnvNames, readEnvVars, readRecency, writeRecency, type Recency } from './store';
 import { modelSlice, parseRegionText, regionText, requestModel, type RequestModel } from './request';
 import { openEditor } from './editor';
 import { copyToTerminal, toCurl } from './share';
@@ -183,17 +183,30 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
     [result],
   );
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+  // Last-run order per file, persisted to ~/.config/htui/recent.json so the
+  // recent-first sort survives restart.
+  const [recency, setRecency] = useState<Recency>({});
+  const recencyDirty = useRef(false);
 
-  // 200+ lists: requests run in this session float to the top (recent group);
-  // the rest keep file order.
+  // Restore the persisted sort on launch; best-effort, never blocks the UI.
+  useEffect(() => {
+    void readRecency().then(setRecency);
+  }, []);
+
+  // Persist only after a real run — never on load, which would rewrite the file.
+  useEffect(() => {
+    if (!recencyDirty.current) return;
+    recencyDirty.current = false;
+    void writeRecency(recency).catch(() => {});
+  }, [recency]);
+
+  // Requests run most recently float to the top (recent group); the rest keep
+  // file order.
   const recentRun = useMemo(() => {
     const last = new Map<string, number>();
-    history.forEach((h, i) => {
-      const key = `${h.method} ${h.url} ${h.name}`;
-      if (!last.has(key)) last.set(key, i);
-    });
+    (file ? recency[file] ?? [] : []).forEach((key, i) => last.set(key, i));
     return last;
-  }, [history]);
+  }, [recency, file]);
   const requestItems = useMemo(
     () =>
       requests
@@ -278,6 +291,14 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
         50,
       ),
     );
+
+    // Keep the persisted sort in step: this request is now the most recent.
+    const key = `${entry.method} ${entry.url} ${entry.name}`;
+    setRecency((prev) => {
+      const list = [key, ...(prev[target.file] ?? []).filter((k) => k !== key)].slice(0, 200);
+      return { ...prev, [target.file]: list };
+    });
+    recencyDirty.current = true;
   }
 
   async function send(target: Picked, from: From, opts?: { chain?: boolean; model?: RequestModel }) {
