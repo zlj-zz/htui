@@ -21,7 +21,7 @@ import { NewRequestForm } from './ui/NewRequestForm';
 import { Hints } from './ui/Hints';
 import { SearchableList } from './ui/SearchableList';
 import { ImportForm } from './ui/ImportForm';
-import { clipBody } from './rows';
+import { clipBody, floatToTop } from './rows';
 import { Banner } from './ui/Banner';
 import { Help } from './ui/Help';
 import { HeaderForm } from './ui/HeaderForm';
@@ -169,9 +169,33 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
     [result],
   );
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+
+  // 200+ lists: requests run in this session float to the top (recent group);
+  // the rest keep file order.
+  const recentRun = useMemo(() => {
+    const last = new Map<string, number>();
+    history.forEach((h, i) => {
+      const key = `${h.method} ${h.url} ${h.name}`;
+      if (!last.has(key)) last.set(key, i);
+    });
+    return last;
+  }, [history]);
+  const requestItems = useMemo(
+    () =>
+      requests
+        ? floatToTop(requests, (r) => recentRun.get(`${r.method} ${r.url} ${r.name}`) ?? Number.MAX_SAFE_INTEGER)
+        : requests,
+    [requests, recentRun],
+  );
+  const requestGroup = (r: HttpRequest) =>
+    recentRun.has(`${r.method} ${r.url} ${r.name}`) ? 'recent' : undefined;
   const [historyReturn, setHistoryReturn] = useState<Step>('result');
   const [helpReturn, setHelpReturn] = useState<Step>('file');
   const [error, setError] = useState('');
+
+  // Per-screen recall: last selected key + filter, restored when a list remounts
+  // (screens unmount on navigation, which would otherwise reset the cursor).
+  const [remember, setRemember] = useState<Partial<Record<Step, { key: string; query: string }>>>({});
 
   function fail(message: string) {
     setError(message);
@@ -403,6 +427,10 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
     return origin === 'search' ? 'search' : origin === 'preview' ? 'preview' : 'request';
   }
 
+  function rememberStep(step: Step, key: string, query: string) {
+    setRemember((r) => ({ ...r, [step]: { key, query } }));
+  }
+
   function fileAction(action: Action, f?: ScannedFile) {
     if (appAction(action)) return;
     if (action === 'open' && f) {
@@ -606,8 +634,9 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
         into={into}
         onCancel={() => setStep('file')}
         onAction={(action) => appAction(action)}
-        onDone={(file) => {
+        onDone={(file, key) => {
           setFile(file);
+          setRemember((r) => ({ ...r, request: { key, query: '' } }));
           setRefresh((n) => n + 1);
           setStep('request');
         }}
@@ -629,6 +658,8 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
         hintOf={historyHint}
         noun="runs"
         leadOf={historyLead}
+        restore={remember.history}
+        onRemember={(key, query) => rememberStep('history', key, query)}
         onAction={historyAction}
       />
     );
@@ -645,6 +676,8 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
         keyOf={envLabel}
         labelOf={envLabel}
         noun="environments"
+        restore={remember.env}
+        onRemember={(key, query) => rememberStep('env', key, query)}
         onAction={envAction}
       />
     );
@@ -665,6 +698,8 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
           hintOf={fileHint}
           groupOf={fileGroup}
           noun="files"
+          restore={remember.file}
+          onRemember={(key, query) => rememberStep('file', key, query)}
           onAction={fileAction}
         />
       </Box>
@@ -679,12 +714,15 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
         step="request"
         header={`${relOf(file)}  ·  env:${activeEnv}`}
         placeholder="filter requests…"
-        items={requests}
+        items={requestItems ?? []}
         keyOf={reqKey}
         labelOf={reqLabel}
         hintOf={reqHint}
         noun="requests"
         leadOf={reqLead}
+        groupOf={requestGroup}
+        restore={remember.request}
+        onRemember={(key, query) => rememberStep('request', key, query)}
         onAction={requestAction}
       />
     );
@@ -703,6 +741,8 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
         hintOf={searchHint}
         noun="requests"
         leadOf={searchLead}
+        restore={remember.search}
+        onRemember={(key, query) => rememberStep('search', key, query)}
         onAction={searchAction}
       />
     );

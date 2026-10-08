@@ -1,5 +1,5 @@
 import { Box, Text, useInput } from 'ink';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { chordOf, resolveKey, type Action, type Step } from '../keys';
 import { Hints } from './Hints';
 import { parseMouse, setMouse, WHEEL_DOWN, WHEEL_UP } from '../mouse';
@@ -23,6 +23,10 @@ export interface SearchableListProps<T> {
   isActive?: boolean;
   /** Every command key is resolved through the shared key map, then lands here. */
   onAction: (action: Action, item: T | undefined) => void;
+  /** Last selected key + filter for this screen — restored on mount. */
+  restore?: { key?: string; query?: string };
+  /** Called on unmount with the current key/filter, so the next mount can restore. */
+  onRemember?: (key: string, query: string) => void;
 }
 
 function Row<T>({
@@ -66,8 +70,10 @@ export function SearchableList<T>({
   maxVisible,
   isActive = true,
   onAction,
+  restore,
+  onRemember,
 }: SearchableListProps<T>) {
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(restore?.query ?? '');
   const [filtering, setFiltering] = useState(false);
   const [cursor, setCursor] = useState(0);
 
@@ -82,6 +88,26 @@ export function SearchableList<T>({
   useEffect(() => {
     setCursor((c) => Math.min(Math.max(0, c), Math.max(0, filtered.length - 1)));
   }, [filtered.length]);
+
+  // Identity restore: once data arrives, jump to the remembered item (by
+  // keyOf identity — line numbers drift after edits/rescans). The remembered
+  // filter is applied via the query state initializer above, so the
+  // setCursor(0)-on-query-change effect can never undo the cursor.
+  const didRestore = useRef(false);
+  useEffect(() => {
+    if (didRestore.current || items.length === 0 || !restore?.key) return;
+    didRestore.current = true;
+    const idx = filtered.findIndex((it) => keyOf(it) === restore.key);
+    if (idx >= 0) setCursor(idx);
+  }, [items, filtered, restore, keyOf]);
+
+  // On unmount, hand the current selection/filter back to the app so the next
+  // mount of this screen restores it.
+  const lastState = useRef({ key: '', query: '' });
+  const onRememberRef = useRef(onRemember);
+  onRememberRef.current = onRemember;
+  lastState.current = { key: selected ? keyOf(selected) : '', query };
+  useEffect(() => () => onRememberRef.current?.(lastState.current.key, lastState.current.query), []);
 
   // Mouse reporting is on only while this list owns the keyboard; while
   // filtering a TextInput is up and would take the raw bytes as text.

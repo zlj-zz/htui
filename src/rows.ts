@@ -60,6 +60,12 @@ export function viewport(total: number, cursor: number, size: number): { start: 
   return { start, end: start + size };
 }
 
+/** Stable partition: items with a rank (lower = more recent) float to the top
+ *  in rank order; the rest keep their original order. */
+export function floatToTop<T>(items: T[], rank: (t: T) => number): T[] {
+  return [...items].sort((a, b) => rank(a) - rank(b));
+}
+
 /** Cap what we render — an unbounded body is the biggest screen-flood source. */
 export const MAX_BODY_LINES = 200;
 

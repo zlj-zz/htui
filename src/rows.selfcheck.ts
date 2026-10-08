@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { buildEntries, clipBody, filterAndRank, scoreMatch, viewport } from './rows';
+import { buildEntries, clipBody, filterAndRank, floatToTop, scoreMatch, viewport } from './rows';
 
 const k = (s: string) => s;
 
@@ -48,5 +48,11 @@ const clippedLines = clipBody(big).split('\n');
 assert.equal(clippedLines.length, 201); // 200 kept + one summary line
 assert.equal(clippedLines[0], 'line0');
 assert.match(clippedLines[200], /\(\+50 more lines\)/);
+
+// floatToTop: ranked items float up in rank order; unranked keep their order
+assert.deepEqual(
+  floatToTop(['a', 'b', 'c', 'd'], (x) => (x === 'c' ? 0 : x === 'a' ? 1 : Number.MAX_SAFE_INTEGER)),
+  ['c', 'a', 'b', 'd'],
+);
 
 console.log('rows.selfcheck: ok');

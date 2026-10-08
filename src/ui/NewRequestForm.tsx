@@ -35,8 +35,8 @@ export function NewRequestForm({
   into?: string;
   onCancel: () => void;
   onAction: (action: Action) => void;
-  /** Called with the target file after the region is written. */
-  onDone: (file: string) => void;
+  /** Called with the target file and the new region's key after writing. */
+  onDone: (file: string, key: string) => void;
 }) {
   const [phase, setPhase] = useState<Phase>('method');
   const [method, setMethod] = useState('');
@@ -76,7 +76,7 @@ export function NewRequestForm({
         // new file — start empty
       }
       await writeAtomic(file, appendRegion(content, model, requestName));
-      onDone(file);
+      onDone(file, `${method} ${url} ${requestName}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
