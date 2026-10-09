@@ -5,7 +5,34 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0] — unreleased
+## [0.2.0] — 2026-10-09
+
+### Added
+
+- **In-place request editing on the preview**: move over a line with
+  `↑`/`↓` and press `e` to edit it; `a` / `d` add and remove headers. Changes
+  are this-send-only until `Ctrl-S` writes the region back to the `.http` file
+  (the region's `###` / `# @name` preamble and every later region are kept).
+  `Ctrl-E` still opens the whole region in `$EDITOR`.
+- **Reuse headers from another request** (`i` on the headers screen): merge
+  another request's headers into the current one, keeping values you already
+  have.
+- **Copy the request body / as curl** (`y` / `Y`) on the preview, with
+  environment-file and file `@var` variables resolved so the copied curl
+  command is runnable as-is.
+- **Persistent request-list sort**: the recently-run-first ordering is
+  persisted and restored across restarts.
+- **Unified key feedback**: acknowledgements fade, warnings stay until the
+  next action.
+
+### Fixed
+
+- The filtered-list cursor is restored by identity instead of reset when
+  returning to a list.
+- Atomic writes preserve the target file's permissions — editing a `0600`
+  `.http` (it can hold secrets) no longer widens it to the umask default.
+
+## [0.1.0] — 2026-10-07
 
 Initial release.
 
@@ -59,3 +86,4 @@ Initial release.
   aborts the import instead of being overwritten.
 
 [0.1.0]: https://github.com/zlj-zz/htui/releases/tag/v0.1.0
+[0.2.0]: https://github.com/zlj-zz/htui/releases/tag/v0.2.0

@@ -1,6 +1,6 @@
 {
   "name": "@zlj-zz/htui",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A terminal UI for httpyac — send HTTP/gRPC/WebSocket requests from your terminal",
   "repository": {
     "type": "git",
