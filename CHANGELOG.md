@@ -5,7 +5,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.0] — 2026-10-13
 
 ### Added
 
@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The preview renders the merged view (`⇩ env` rows) and copy-as-curl uses it.
 - **The selected env persists** across restarts, scoped per env file
   (`HTUI_ENV` still wins; headless `htui send` keeps its explicit resolution).
+- **Copy the response body** (`y` on the result screen): the full,
+  pretty-printed body — unclipped and unaffected by the body-search filter.
+- The env picker opens with the cursor on the active env.
 
 ### Changed
 
@@ -27,6 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `{{placeholders}}` in the generated `.http` — a request with a missing value
   fails and names the variable, instead of every endpoint's params landing in
   the env file. Existing env files are never touched (write-once).
+- Key hints are unambiguous: `y` copies the request body on the preview and the
+  response body on the result screen (`copy resp`); `Ctrl-E` on the preview
+  reads `editor`; the header-source picker's `Enter` reads `reuse headers`.
 
 ### Removed
 
@@ -116,4 +122,5 @@ Initial release.
   aborts the import instead of being overwritten.
 
 [0.1.0]: https://github.com/zlj-zz/htui/releases/tag/v0.1.0
+[0.3.0]: https://github.com/zlj-zz/htui/releases/tag/v0.3.0
 [0.2.0]: https://github.com/zlj-zz/htui/releases/tag/v0.2.0
