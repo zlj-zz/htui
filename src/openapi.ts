@@ -232,17 +232,6 @@ function mergeParams(doc: OpenApiDoc, pathItem: PathItem, op: Operation): Parame
   return [...byKey.values()];
 }
 
-function paramDefault(doc: OpenApiDoc, p: Parameter): string {
-  if (p.example !== undefined) return String(p.example);
-  const s = resolveSchema(doc, p.schema, new Set());
-  if (s.default !== undefined) return String(s.default);
-  if (s.enum?.length) return String(s.enum[0]);
-  const type = Array.isArray(s.type) ? s.type[0] : s.type;
-  if (type === 'integer' || type === 'number') return '0';
-  if (type === 'boolean') return 'false';
-  return 'string';
-}
-
 function pickJsonContent(content: Record<string, MediaType>): string | undefined {
   const keys = Object.keys(content);
   return (
@@ -325,10 +314,9 @@ export function openapiToHttp(doc: OpenApiDoc, opts: EmitOptions): EmittedCollec
       const params = mergeParams(doc, pathItem, op);
       let url = `{{baseUrl}}${route}`;
       for (const p of params) {
-        if (p.in === 'path' && p.name) {
-          url = url.replace(`{${p.name}}`, `{{${p.name}}}`);
-          declare(p.name, paramDefault(doc, p));
-        }
+        // Placeholders stay in the file; per-endpoint values do NOT go to the
+        // env — a request with a missing one fails loudly, naming the variable.
+        if (p.in === 'path' && p.name) url = url.replace(`{${p.name}}`, `{{${p.name}}}`);
       }
 
       const auth = securityFor(doc, op, warnings);
@@ -336,10 +324,7 @@ export function openapiToHttp(doc: OpenApiDoc, opts: EmitOptions): EmittedCollec
 
       const query = [...auth.query];
       for (const p of params) {
-        if (p.in === 'query' && p.required && p.name) {
-          query.push(`${p.name}={{${p.name}}}`);
-          declare(p.name, paramDefault(doc, p));
-        }
+        if (p.in === 'query' && p.required && p.name) query.push(`${p.name}={{${p.name}}}`);
       }
       if (query.length) url += `?${query.join('&')}`;
 

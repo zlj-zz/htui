@@ -33,8 +33,8 @@ assert.equal(oas.servers?.[0]?.url, 'https://api.example.com/v1');
 
 const { text, vars } = openapiToHttp(oas, { source: 'petstore-v2.json' });
 assert.equal(vars.baseUrl, 'https://api.example.com/v1');
-assert.equal(vars.id, '0');
 assert.equal(vars.apiKey, 'REPLACE_ME');
+assert.ok(!('id' in vars)); // per-endpoint params stay out of the env
 assert.match(text, /^GET \{\{baseUrl\}\}\/pets\/\{\{id\}\}$/m);
 assert.match(text, /^PUT \{\{baseUrl\}\}\/pets\/\{\{id\}\}$/m);
 assert.match(text, /^X-Api-Key: \{\{apiKey\}\}$/m); // securityDefinitions -> securitySchemes

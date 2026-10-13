@@ -81,6 +81,12 @@ try {
   ) as Record<string, Record<string, string>>;
   assert.equal(env.default.baseUrl, `http://127.0.0.1:${port}`);
 
+  // per-endpoint params are no longer seeded by the import — the user fills
+  // them in (here: by editing the env, exactly what a user would do)
+  env.default.limit = '20';
+  env.default.petId = '0';
+  await writeFile(path.join(path.dirname(result.file), 'http-client.env.json'), JSON.stringify(env));
+
   const requests = parseRequests(content);
   assert.equal(requests.length, 3);
 

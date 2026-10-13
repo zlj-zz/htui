@@ -40,9 +40,8 @@ assert.match(text, /# source: petstore\.json · OpenAPI 3\.0\.3 · 3 endpoints/)
 assert.doesNotMatch(text, /^@/m);
 // ...they come back as environment variables instead
 assert.equal(vars.baseUrl, 'https://api.example.com/v1');
-assert.equal(vars.token, 'REPLACE_ME');
-assert.equal(vars.limit, '20');
-assert.equal(vars.petId, '0');
+assert.equal(vars.token, 'REPLACE_ME'); // auth is global
+assert.ok(!('limit' in vars) && !('petId' in vars)); // per-endpoint params stay out of the env
 
 for (const name of ['listPets', 'createPet', 'getPet']) assert.match(text, new RegExp(`### ${name}$`, 'm'));
 assert.doesNotMatch(text, /### .*old/i);
@@ -52,10 +51,10 @@ assert.match(text, /^Authorization: Bearer \{\{token\}\}$/m);
 assert.doesNotMatch(text, /Bearer [A-Za-z0-9._-]{12,}/);
 assert.match(text, /"name": "string"/);
 
-// invariant: every variable the file uses is provided by the environment
-for (const m of text.matchAll(/\{\{([A-Za-z0-9_]+)\}\}/g)) {
-  assert.ok(m[1] in vars, `missing env var {{${m[1]}}}`);
-}
+// invariant: the env provides exactly the globals; per-endpoint params
+// (limit, petId) are referenced by the file but deliberately absent — a send
+// with a missing one fails and names the variable
+assert.deepEqual(Object.keys(vars).sort(), ['baseUrl', 'token']);
 
 // determinism
 const again = openapiToHttp(spec, { source: 'petstore.json' });
