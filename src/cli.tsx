@@ -9,7 +9,6 @@ import path from 'node:path';
 import { isStaleGeneration, noticeTtl, type Notice, type NoticeKind } from './notice';
 import { parseRequests, type HttpRequest } from './parse';
 import { hasResponse, isOk, testIcon, type HttpyacRequestResult, type TestResult } from './result';
-import { runChain, type ChainEntry } from './chain';
 import { httpyacOnPath, HTTPYAC_INSTALL_HINT, isAbort, runRequest, runTempSlice } from './run';
 import { buildWorkspace, listFiles, type IndexedRequest, type ScannedFile } from './workspace';
 import {
@@ -165,7 +164,6 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
   const [previewReturn, setPreviewReturn] = useState<Step>('request');
   const [refresh, setRefresh] = useState(0);
   const [result, setResult] = useState<HttpyacRequestResult | null>(null);
-  const [prereqs, setPrereqs] = useState<ChainEntry[]>([]);
   const [showHeaders, setShowHeaders] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
   const noticeGen = useRef(0);
@@ -319,11 +317,10 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
     recencyDirty.current = true;
   }
 
-  async function send(target: Picked, from: From, opts?: { chain?: boolean; model?: RequestModel }) {
+  async function send(target: Picked, from: From, opts?: { model?: RequestModel }) {
     setPicked(target);
     setOrigin(from);
     setError('');
-    setPrereqs([]);
     setShowHeaders(false);
     setNotice(null);
     setBodyQuery('');
@@ -336,39 +333,13 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
       const inject = Object.keys(envHeaders).length > 0;
       const merged = (model: RequestModel) => mergeEnvHeaders(model, envHeaders);
       let res: HttpyacRequestResult | null;
-      if (opts?.model) {
-        // Edited in the preview: run the preamble + the rebuilt region, so any
-        // `{{login.response…}}` dependency still resolves.
+      if (opts?.model || inject) {
+        // A preview-edited model and/or env $headers: materialize the preamble +
+        // the rebuilt region and send exactly that one region (`--line`) — the
+        // `.http` file itself is never touched.
         const content = await readFile(target.file, 'utf8');
-        const outcome = await runChain({
-          file: target.file,
-          content,
-          target: target.req,
-          env: activeEnv,
-          slice: modelSlice(content, target.req, inject ? merged(opts.model) : opts.model),
-          signal: controller.signal,
-        });
-        setPrereqs(outcome.prerequisites);
-        res = outcome.target ?? null;
-      } else if (opts?.chain) {
-        // A dependent request only works when its prerequisites run in the same
-        // httpyac invocation, so run the file slice up to this region.
-        const content = await readFile(target.file, 'utf8');
-        const outcome = await runChain({
-          file: target.file,
-          content,
-          target: target.req,
-          env: activeEnv,
-          slice: inject ? modelSlice(content, target.req, merged(requestModel(content, target.req))) : undefined,
-          signal: controller.signal,
-        });
-        setPrereqs(outcome.prerequisites);
-        res = outcome.target ?? null;
-      } else if (inject) {
-        // Env $headers apply: materialize the merged region (the line index is
-        // preserved) and send that — the `.http` file itself is never touched.
-        const content = await readFile(target.file, 'utf8');
-        const slice = modelSlice(content, target.req, merged(requestModel(content, target.req)));
+        const base = opts?.model ?? requestModel(content, target.req);
+        const slice = modelSlice(content, target.req, inject ? merged(base) : base);
         res = await runTempSlice({ file: target.file, slice, req: target.req, env: activeEnv, signal: controller.signal });
       } else {
         res = await runRequest(target.file, target.req, activeEnv, controller.signal);
@@ -610,7 +581,7 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
     if (action === 'preview' && r && file) void openPreview(file, r, 'request');
     // `r` runs it right away — the preview sits on Enter, not on the fast path.
     else if (action === 'run' && r && file) void send({ file, req: r }, 'request');
-    else if (action === 'chain' && r && file) void send({ file, req: r }, 'request', { chain: true });
+    else if (action === 'run' && r && file) void send({ file, req: r }, 'request');
     else if (action === 'headers' && r && file) void openHeaders(file, r, 'request');
     else if (action === 'edit' && r && file) void edit(file, r.line);
     else if (action === 'import') openImport('request');
@@ -682,7 +653,6 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
       setError('');
       setStep(resultReturn());
     } else if (action === 'run' && picked) void send(picked, origin);
-    else if (action === 'chain' && picked) void send(picked, origin, { chain: true });
     else if (action === 'copy-resp') copyResponseBody();
     else if (action === 'edit' && picked) void edit(picked.file, picked.req.line);
     else if (action === 'vars' && picked) {
@@ -1106,21 +1076,6 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
         {result?.duration != null ? `  ${Math.round(result.duration)}ms` : ''}
       </Text>
       {picked ? <Text dimColor>{relOf(picked.file)}</Text> : null}
-
-      {prereqs.length ? (
-        <Box marginTop={1} flexDirection="column">
-          <Text dimColor>
-            chain · {prereqs.length} prerequisite{prereqs.length > 1 ? 's' : ''}
-          </Text>
-          {prereqs.map((p, i) => (
-            <Text key={i} color={p.ok ? 'green' : 'red'}>
-              {p.ok ? '✓' : '✗'} {p.name}
-              {p.statusCode != null ? ` ${p.statusCode}` : ''}
-              {p.message ? ` — ${p.message}` : ''}
-            </Text>
-          ))}
-        </Box>
-      ) : null}
 
       {completed ? (
         <>

@@ -37,7 +37,6 @@ export type Action =
   | 'send'
   | 'resend'
   | 'run'
-  | 'chain'
   | 'edit'
   | 'edit-preview'
   | 'headers'
@@ -112,7 +111,6 @@ const PER_STEP: Partial<Record<Step, Record<Chord, Action>>> = {
   file: { 'ctrl-e': 'edit', i: 'import', s: 'env', 'ctrl-f': 'search' },
   request: {
     r: 'run',
-    R: 'chain',
     h: 'headers',
     i: 'import',
     s: 'env',
@@ -134,10 +132,9 @@ const PER_STEP: Partial<Record<Step, Record<Chord, Action>>> = {
     Y: 'copy-curl',
   },
   import: { o: 'overwrite' },
-  error: { r: 'run', R: 'chain', 'ctrl-e': 'edit' },
+  error: { r: 'run', 'ctrl-e': 'edit' },
   result: {
     r: 'run',
-    R: 'chain',
     'ctrl-e': 'edit',
     h: 'fold-headers',
     '/': 'search-body',
@@ -164,7 +161,6 @@ export const ACTION_LABEL: Record<Action, string> = {
   send: 'send',
   resend: 'resend',
   run: 'run',
-  chain: 'chain',
   edit: 'edit',
   'edit-preview': 'editor',
   headers: 'headers',

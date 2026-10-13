@@ -28,6 +28,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fails and names the variable, instead of every endpoint's params landing in
   the env file. Existing env files are never touched (write-once).
 
+### Removed
+
+- **Chain mode** (`R`, `htui send --chain`): a send always runs exactly one
+  region. Cross-request references (`{{login.response…}}`) and cookies from
+  earlier regions no longer resolve on send — run multi-region flows with
+  `httpyac send <file> --all` directly.
+
 ## [0.2.0] — 2026-10-09
 
 ### Added

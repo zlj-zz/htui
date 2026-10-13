@@ -5,7 +5,6 @@
 import { appVersion } from './version';
 import { readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
-import { runChain, type ChainEntry } from './chain';
 import { importOpenApi } from './import-openapi';
 import { importProto } from './import-proto';
 import { parseRequests } from './parse';
@@ -22,7 +21,6 @@ export interface Flags {
   into?: string;
   force: boolean;
   local: boolean;
-  chain: boolean;
   json: boolean;
   reflection: boolean;
   /** Set on a bad option; commands report it and exit 2. */
@@ -31,7 +29,7 @@ export interface Flags {
 }
 
 export function parseFlags(args: string[]): Flags {
-  const flags: Flags = { force: false, local: false, chain: false, json: false, reflection: false, positional: [] };
+  const flags: Flags = { force: false, local: false, json: false, reflection: false, positional: [] };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg === '--name' || arg === '-n') flags.name = args[++i];
@@ -48,7 +46,6 @@ export function parseFlags(args: string[]): Flags {
     else if (arg.startsWith('--env=')) flags.env = arg.slice('--env='.length);
     else if (arg === '--force' || arg === '-f') flags.force = true;
     else if (arg === '--local') flags.local = true;
-    else if (arg === '--chain') flags.chain = true;
     else if (arg === '--json') flags.json = true;
     else if (arg === '--reflection') flags.reflection = true;
     else if (arg.startsWith('-') && arg !== '-') flags.error ??= `unknown option: ${arg}`;
@@ -147,10 +144,10 @@ export async function sendCommand(args: string[]): Promise<number> {
     process.stderr.write(`htui send: ${flags.error}\n`);
     return 2;
   }
-  const { name, line, chain, env, json, positional } = flags;
+  const { name, line, env, json, positional } = flags;
   const file = positional[0];
   if (!file) {
-    process.stderr.write('usage: htui send <file.http> [--name N | --line N] [--chain] [-e ENV] [--json]\n');
+    process.stderr.write('usage: htui send <file.http> [--name N | --line N] [-e ENV] [--json]\n');
     return 2;
   }
 
@@ -178,26 +175,14 @@ export async function sendCommand(args: string[]): Promise<number> {
   const activeEnv = env ?? process.env.HTUI_ENV ?? 'default';
   const req = selected.req;
   let target: HttpyacRequestResult | undefined;
-  let prerequisites: ChainEntry[] = [];
   try {
     // Global headers from the env's $headers apply headless too — but the env
     // itself stays explicit (flag / HTUI_ENV / default): scripts stay reproducible.
     const envHeaders = await readEnvHeaders(path.dirname(filePath), activeEnv);
-    const merged = () => mergeEnvHeaders(requestModel(content, req), envHeaders);
-    if (chain) {
-      const outcome = await runChain({
-        file: filePath,
-        content,
-        target: req,
-        env: activeEnv,
-        slice: Object.keys(envHeaders).length ? modelSlice(content, req, merged()) : undefined,
-      });
-      target = outcome.target;
-      prerequisites = outcome.prerequisites;
-    } else if (Object.keys(envHeaders).length) {
+    if (Object.keys(envHeaders).length) {
       target = await runTempSlice({
         file: filePath,
-        slice: modelSlice(content, req, merged()),
+        slice: modelSlice(content, req, mergeEnvHeaders(requestModel(content, req), envHeaders)),
         req,
         env: activeEnv,
       });
@@ -210,11 +195,7 @@ export async function sendCommand(args: string[]): Promise<number> {
   }
 
   const ok = isOk(target);
-  process.stdout.write(
-    json
-      ? `${JSON.stringify({ ok, target: brief(target), prerequisites }, null, 2)}\n`
-      : `${human(target, prerequisites)}\n`,
-  );
+  process.stdout.write(json ? `${JSON.stringify({ ok, target: brief(target) }, null, 2)}\n` : `${human(target)}\n`);
   return ok ? 0 : 1;
 }
 
@@ -230,12 +211,8 @@ function brief(target?: HttpyacRequestResult): Record<string, unknown> | null {
   };
 }
 
-function human(target: HttpyacRequestResult | undefined, prerequisites: ChainEntry[]): string {
+function human(target: HttpyacRequestResult | undefined): string {
   const lines: string[] = [];
-  for (const p of prerequisites) {
-    const status = p.statusCode != null ? ` ${p.statusCode}` : '';
-    lines.push(`${p.ok ? '✓' : '✗'} ${p.name}${status}${p.message ? ` — ${p.message}` : ''}`);
-  }
   if (!target) {
     lines.push('✗ request did not run');
     return lines.join('\n');
@@ -273,7 +250,6 @@ export function printHelp(): void {
       '',
       'send options:',
       '  --name N | --line N  pick the request (needed if the file has several)',
-      '  --chain              run prerequisite requests first',
       '  -e, --env E          httpyac environment',
       '  --json               machine-readable output',
       '',

@@ -57,7 +57,7 @@ assert.deepEqual(parseRegionText(regionText(model)), model);
 const slice = modelSlice(content, me, edited);
 assert.match(slice, /^@host = http:\/\/x/);
 assert.match(slice, /### login/);
-assert.match(slice, /POST \{\{host\}\}\/login/); // prerequisite region kept
+assert.match(slice, /POST \{\{host\}\}\/login/); // earlier region kept
 assert.match(slice, /### me/); // region marker (above the request line) kept
 assert.match(slice, /X-T|POST https:\/\/other\/x\?q=1/);
 assert.ok(slice.includes(jsonBody)); // body verbatim

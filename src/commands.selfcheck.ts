@@ -3,8 +3,8 @@ import { parseFlags } from './commands';
 
 // all flags
 assert.deepEqual(
-  parseFlags(['file.http', '-n', 'x', '--line', '3', '--chain', '--json', '-e', 'dev', '--local', '--force']),
-  { force: true, local: true, chain: true, json: true, reflection: false, name: 'x', line: 3, env: 'dev', positional: ['file.http'] },
+  parseFlags(['file.http', '-n', 'x', '--line', '3', '--json', '-e', 'dev', '--local', '--force']),
+  { force: true, local: true, json: true, reflection: false, name: 'x', line: 3, env: 'dev', positional: ['file.http'] },
 );
 
 // `--flag=value` form

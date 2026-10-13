@@ -53,7 +53,7 @@ preview, and run it like any other request. Requires a TTY.
 | any list | mouse wheel | move the selection (hold **Shift** to select text) |
 | any list | `i` | import an OpenAPI spec |
 | any list | `s` | switch environment |
-| requests | `r` / `R` | run now (skip the preview) / run with prerequisites (chain) |
+| requests | `r` | run now (skip the preview) |
 | any list | `Ctrl-F` | search requests across all files |
 | result | `r`/`R` run · `Ctrl-E` edit · `/` search body · `v` vars · `t` history · `w` save · `h` headers · `Esc` back · `q` quit | |
 | sending | `Esc` | cancel the in-flight request (kills the child) |
@@ -86,7 +86,7 @@ import.
 
 htui adds no protocol layer of its own — [httpyac](https://httpyac.github.io) speaks
 gRPC natively, and htui runs whatever the region says. A gRPC call is just another
-region in the same `.http` file, with the same preview / edit / run / chain keys.
+region in the same `.http` file, with the same preview / edit / run keys.
 See `examples/grpc.http` for a runnable example.
 
 ### gRPC
@@ -115,10 +115,10 @@ x-token: {{token}}
   calls a deadline — gRPC without one hangs indefinitely.
 - `Y` (copy as curl) is HTTP-only: for gRPC it emits a command that cannot run.
 
-### Chaining an HTTP login into a gRPC call
+### An HTTP login flowing into a gRPC call
 
 Response references like `{{login.response.body.$.token}}` do **not** exist in
-httpyac. Chain through a global variable set in a response hook:
+httpyac. Bridge the two with a global variable set in a response hook:
 
 ```http
 ### login
@@ -140,9 +140,10 @@ x-token: {{token}}
 ```
 
 The hook sits **inside the login region, after its body**. The variable lives for
-**one httpyac run** (same rule as cookies): send the pair with `r`/`R` (run-chain)
-or `--chain`. Sending the gRPC request alone resolves `{{token}}` from the env
-file only — it will not see the login's value.
+**one httpyac run** (same rule as cookies). htui sends one region at a time, so
+run this pair with `httpyac send <file> --all` directly. Sending the gRPC request
+alone resolves `{{token}}` from the env file only — it will not see the login's
+value.
 
 ### tRPC
 
@@ -190,13 +191,10 @@ line, and their `import "…"` statements resolve from the copied neighbours.
 
 ```bash
 htui send api/users.http -n listUsers        # one request
-htui send api/users.http -n getMe --chain     # run prerequisite requests first (login -> token/cookie)
 htui send api/users.http --line 12 --json     # machine-readable
 ```
 
-Exit codes: `0` completed · `1` failed · `2` usage/selection error. `--chain`
-slices the file up to the target region and runs it with `--all`, so session
-state from earlier requests (cookie, token) is available.
+Exit codes: `0` completed · `1` failed · `2` usage/selection error.
 
 ## Dev
 

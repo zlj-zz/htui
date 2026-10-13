@@ -32,7 +32,7 @@ export function isAbort(err: unknown): boolean {
  * True when an `httpyac` executable sits somewhere on `p` (default $PATH).
  * A PATH scan, not a spawn: startup must not pay a node cold-start. Shell
  * aliases and functions are invisible to this — those callers still get the
- * hint from the ENOENT mapping in `runRequest`/`runChain`.
+ * hint from the ENOENT mapping in `runRequest`.
  */
 export function httpyacOnPath(p: string = process.env.PATH ?? ''): boolean {
   const names = process.platform === 'win32' ? ['httpyac.exe', 'httpyac.cmd', 'httpyac.bat'] : ['httpyac'];

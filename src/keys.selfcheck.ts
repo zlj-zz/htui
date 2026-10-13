@@ -60,11 +60,9 @@ assert.equal(resolveKey('env-vars', 'a'), 'add-var');
 assert.equal(resolveKey('env-vars', 'h'), 'add-header');
 assert.equal(resolveKey('env-vars', 'd'), 'delete-header');
 
-// run / chain are the same key on the request list and the result screen
+// `r` runs the request on both the request list and the result screen
 assert.equal(resolveKey('request', 'r'), 'run');
 assert.equal(resolveKey('result', 'r'), 'run');
-assert.equal(resolveKey('request', 'R'), 'chain');
-assert.equal(resolveKey('result', 'R'), 'chain');
 
 // `h` is "headers" on both, but a different action
 assert.equal(resolveKey('request', 'h'), 'headers');
@@ -89,7 +87,6 @@ assert.equal(resolveKey('env', 'i'), null);
 // an error screen keeps the verbs that fix the request; the response-only ones
 // (y/Y/w/v/t/h) stay off it, since there is no response to act on
 assert.equal(resolveKey('error', 'r'), 'run');
-assert.equal(resolveKey('error', 'R'), 'chain');
 assert.equal(resolveKey('error', 'ctrl-e'), 'edit');
 assert.equal(resolveKey('error', 'y'), null);
 assert.equal(resolveKey('error', 'v'), null);
@@ -104,7 +101,6 @@ const hint = (key: string) => request.find((h) => h.key === key)?.label;
 assert.equal(hint('Enter'), 'preview');
 assert.equal(hint('Ctrl-E'), 'edit');
 assert.equal(hint('r'), 'run');
-assert.equal(hint('R'), 'chain');
 assert.equal(hint('?'), 'help');
 assert.equal(hint('Esc'), 'back');
 assert.equal(hint('q'), 'quit');
