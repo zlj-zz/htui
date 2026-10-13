@@ -693,6 +693,8 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
     const { names, files } = await collectEnvNames(path.dirname(filePath));
     setEnvFile(files[0] ?? path.join(path.dirname(filePath), 'http-client.env.json'));
     setEnvNames(names);
+    // The cursor starts on the active env, not on the first row.
+    rememberStep('env', activeEnv, '');
   }
 
   /** The selected env survives restarts, scoped to the nearest env file's dir.
