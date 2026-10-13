@@ -3,6 +3,8 @@
  * headless `htui send` command, so both paths behave identically.
  */
 import { execFile } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
+import { rm, stat, writeFile } from 'node:fs/promises';
 import { statSync } from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -114,4 +116,36 @@ export function selectRequest(
   }
   if (requests.length === 1) return { req: requests[0] };
   return { error: 'file has multiple requests; pass --name or --line' };
+}
+
+/**
+ * Send a materialized slice for one region — same `--line` semantics as
+ * `runRequest`, but on provided content (used when env `$headers` must be
+ * merged into the outgoing request). The temp file lives next to the original
+ * so env discovery and relative references keep working, and `slice` must
+ * preserve the region's line index (`modelSlice` does by construction).
+ */
+export async function runTempSlice(opts: {
+  file: string;
+  slice: string;
+  req: HttpRequest;
+  env?: string;
+  signal?: AbortSignal;
+}): Promise<HttpyacRequestResult> {
+  const dir = path.dirname(opts.file);
+  // Dot-prefixed so workspace scanning never treats the temp file as a collection.
+  const tempPath = path.join(dir, `.${path.basename(opts.file)}.htui.${randomUUID()}.tmp.http`);
+  // The slice can carry env-header secrets: never land it wider than the original.
+  let mode: number | undefined;
+  try {
+    mode = (await stat(opts.file)).mode;
+  } catch {
+    mode = undefined;
+  }
+  await writeFile(tempPath, opts.slice, mode === undefined ? 'utf8' : { encoding: 'utf8', mode });
+  try {
+    return await runRequest(tempPath, opts.req, opts.env, opts.signal);
+  } finally {
+    await rm(tempPath, { force: true });
+  }
 }

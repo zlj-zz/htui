@@ -2,8 +2,8 @@
  * The collection store: where imported OpenAPI collections live on disk, how
  * their names are validated, and the sidecar index that records provenance.
  */
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import os from 'node:os';
+import { randomUUID } from 'node:crypto';
+import { mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';import os from 'node:os';
 import path from 'node:path';
 
 /** Root of htui's user-level state: $HTUI_HOME > $XDG_CONFIG_HOME/htui > ~/.config/htui. */
@@ -104,16 +104,19 @@ export function collectionEnv(name: string, local: boolean): string {
   return path.join(collectionDir(name, local), 'http-client.env.json');
 }
 
-function isMissing(err: unknown): boolean {
+export function isMissing(err: unknown): boolean {
   return (err as { code?: string } | null)?.code === 'ENOENT';
 }
 
 export type EnvVars = Record<string, string>;
 
-/** Environment names declared in an http-client.env.json file (for the picker). */
+/** Environment names declared in an http-client.env.json file (for the picker).
+ *  `$`-prefixed keys are htui-reserved (`$headers`) — they are not environments. */
 export async function readEnvNames(file: string): Promise<string[]> {
   try {
-    return Object.keys(JSON.parse(await readFile(file, 'utf8')) as Record<string, unknown>);
+    return Object.keys(JSON.parse(await readFile(file, 'utf8')) as Record<string, unknown>).filter(
+      (name) => !name.startsWith('$'),
+    );
   } catch {
     return [];
   }
@@ -158,7 +161,9 @@ export async function readEnvVars(startDir: string, envName: string): Promise<En
   for (const file of [...files].reverse()) {
     try {
       const env = JSON.parse(await readFile(file, 'utf8')) as Record<string, EnvVars>;
-      Object.assign(vars, env[envName] ?? {});
+      for (const [key, value] of Object.entries(env[envName] ?? {})) {
+        if (!key.startsWith('$') && typeof value === 'string') vars[key] = value;
+      }
     } catch {
       // unreadable env files are reported by the import/merge paths
     }
@@ -231,4 +236,151 @@ export async function readRecency(): Promise<Recency> {
 export async function writeRecency(recency: Recency): Promise<void> {
   await mkdir(htuiHome(), { recursive: true });
   await writeFile(recencyPath(), `${JSON.stringify(recency, null, 2)}\n`, 'utf8');
+}
+
+// --- shared atomic writer + user-level state (selected env per project) ---
+
+export async function writeFileAtomic(file: string, content: string, mode?: number): Promise<void> {
+  const tmp = `${file}.${randomUUID()}.tmp`;
+  // Rename replaces the file: carry the original mode over or a 600 `.http`
+  // (it can hold secrets) would widen to the umask default. `mode` is the
+  // fallback for files that do not exist yet (env/state files hold secrets).
+  let existing: number | undefined;
+  try {
+    existing = (await stat(file)).mode;
+  } catch {
+    existing = undefined;
+  }
+  const effective = existing ?? mode;
+  try {
+    await writeFile(tmp, content, effective === undefined ? 'utf8' : { encoding: 'utf8', mode: effective });
+    await rename(tmp, file);
+  } finally {
+    await rm(tmp, { force: true });
+  }
+}
+
+export interface HtuiState {
+  /** scope (nearest env-file dir) → selected env name */
+  env?: Record<string, string>;
+}
+
+function statePath(): string {
+  return path.join(htuiHome(), 'state.json');
+}
+
+export async function readState(): Promise<HtuiState> {
+  try {
+    const raw = JSON.parse(await readFile(statePath(), 'utf8')) as HtuiState;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw) || !raw.env) return {};
+    const env: Record<string, string> = {};
+    for (const [key, value] of Object.entries(raw.env)) if (typeof value === 'string') env[key] = value;
+    return { env };
+  } catch {
+    return {};
+  }
+}
+
+export async function writeState(state: HtuiState): Promise<void> {
+  await mkdir(htuiHome(), { recursive: true });
+  await writeFileAtomic(statePath(), `${JSON.stringify(state, null, 2)}\n`, 0o600);
+}
+
+// --- env files: interactive editing writes the one file that defines an env ---
+
+export type EnvFileData = Record<string, Record<string, unknown>>;
+
+/** Parsed env file, or null when missing/invalid (invalid files are never rewritten). */
+export async function readEnvFile(file: string): Promise<EnvFileData | null> {
+  try {
+    const raw = JSON.parse(await readFile(file, 'utf8')) as unknown;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    return raw as EnvFileData;
+  } catch {
+    return null;
+  }
+}
+
+export async function writeEnvFile(file: string, data: EnvFileData): Promise<void> {
+  await mkdir(path.dirname(file), { recursive: true });
+  // Env files hold secrets — a newly created one is owner-only.
+  await writeFileAtomic(file, `${JSON.stringify(data, null, 2)}\n`, 0o600);
+}
+
+/** Nearest env file that defines `envName` — where interactive edits land. */
+export async function envDefiningFile(startDir: string, envName: string): Promise<string | undefined> {
+  for (const file of await findEnvFiles(startDir)) {
+    const data = await readEnvFile(file);
+    if (data && envName in data) return file;
+  }
+  return undefined;
+}
+
+/** Env `$headers` for `envName`, nearest file wins per header name. */
+export async function readEnvHeaders(startDir: string, envName: string): Promise<Record<string, string>> {
+  const files = await findEnvFiles(startDir);
+  const merged: Record<string, unknown> = {};
+  for (const file of [...files].reverse()) {
+    const data = await readEnvFile(file);
+    const headers = data?.[envName]?.['$headers'];
+    if (headers && typeof headers === 'object' && !Array.isArray(headers)) Object.assign(merged, headers);
+  }
+  const out: Record<string, string> = {};
+  for (const [name, value] of Object.entries(merged)) {
+    const text = String(value);
+    // A newline in a header value would corrupt the materialized request file.
+    if (/^[A-Za-z0-9._-]+$/.test(name) && !/[\r\n]/.test(text)) out[name] = text;
+  }
+  return out;
+}
+
+// --- structured env editing: rows are the editable projection of one env ---
+
+export interface EnvRow {
+  kind: 'var' | 'header';
+  name: string;
+  value: string;
+}
+
+/** The editable projection of `envName` in `content`: string variables + `$headers`. */
+export function envRowsOf(content: string, envName: string): EnvRow[] {
+  let data: Record<string, unknown>;
+  try {
+    data = JSON.parse(content) as Record<string, unknown>;
+  } catch {
+    return [];
+  }
+  const env = (data[envName] ?? {}) as Record<string, unknown>;
+  const vars = Object.entries(env)
+    .filter((entry): entry is [string, string] => {
+      const [name, value] = entry;
+      return name !== '$headers' && !name.startsWith('$') && typeof value === 'string';
+    })
+    .map(([name, value]): EnvRow => ({ kind: 'var', name, value }));
+  const raw = env.$headers;
+  const headers =
+    raw && typeof raw === 'object' && !Array.isArray(raw)
+      ? Object.entries(raw as Record<string, unknown>).map(
+          ([name, value]): EnvRow => ({ kind: 'header', name, value: String(value) }),
+        )
+      : [];
+  return [...vars, ...headers];
+}
+
+/**
+ * Rebuild the file from its rows. Everything a row could represent (string
+ * variables, `$headers`) is removed first so renames and deletions cannot leave
+ * orphan keys; non-string values and unknown `$`-keys survive untouched.
+ */
+export function envFileWithRows(content: string, envName: string, rows: EnvRow[]): string {
+  const data = JSON.parse(content) as Record<string, Record<string, unknown>>;
+  const env = { ...data[envName] };
+  for (const [key, value] of Object.entries(env)) {
+    const rowRepresentable = key !== '$headers' && !key.startsWith('$') && typeof value === 'string';
+    if (rowRepresentable || key === '$headers') delete env[key];
+  }
+  for (const row of rows) if (row.kind === 'var') env[row.name] = row.value;
+  const headers = rows.filter((r) => r.kind === 'header');
+  if (headers.length) env.$headers = Object.fromEntries(headers.map((r) => [r.name, r.value]));
+  return `${JSON.stringify({ ...data, [envName]: env }, null, 2)}\n`;
 }

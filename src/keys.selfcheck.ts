@@ -12,7 +12,7 @@ assert.equal(chordOf('\u001B[<64;1;1M', {}), null); // a mouse sequence — the 
 
 // globals hold on every screen, forms included
 const steps: Step[] = [
-  'file', 'request', 'search', 'import', 'env', 'headers', 'pick-headers', 'preview',
+  'file', 'request', 'search', 'import', 'env', 'env-vars', 'headers', 'pick-headers', 'preview',
   'sending', 'result', 'history', 'help', 'error',
 ];
 for (const step of steps) {
@@ -48,6 +48,17 @@ assert.equal(resolveKey('preview', 'ctrl-s'), 'save'); // write the region back
 assert.equal(resolveKey('headers', 'i'), 'import-headers');
 assert.equal(resolveKey('pick-headers', 'enter'), 'open');
 assert.equal(resolveKey('pick-headers', 'escape'), 'back');
+
+// env screen: Enter selects (hot path), e opens the structured vars editor,
+// a/d add/delete envs — ctrl-e stays the $EDITOR escape hatch
+assert.equal(resolveKey('env', 'e'), 'edit-env-vars');
+assert.equal(resolveKey('env', 'a'), 'add-env');
+assert.equal(resolveKey('env', 'd'), 'delete-env');
+assert.equal(resolveKey('env', 'ctrl-e'), 'edit');
+assert.equal(resolveKey('env-vars', 'enter'), 'edit-header');
+assert.equal(resolveKey('env-vars', 'a'), 'add-var');
+assert.equal(resolveKey('env-vars', 'h'), 'add-header');
+assert.equal(resolveKey('env-vars', 'd'), 'delete-header');
 
 // run / chain are the same key on the request list and the result screen
 assert.equal(resolveKey('request', 'r'), 'run');

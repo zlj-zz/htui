@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Interactive env editing** (`s` → `e`): add/delete environments (`a`/`d`,
+  delete confirms with a second press) and edit an env's variables and global
+  headers in place — written to the one env file that defines the env; a file
+  that is not valid JSON is never rewritten.
+- **Global headers per env**: `$headers` in the env applies to every request
+  while that env is active (TUI and `htui send` alike), injected at send time
+  without touching the `.http` file; a request's own header always wins.
+  The preview renders the merged view (`⇩ env` rows) and copy-as-curl uses it.
+- **The selected env persists** across restarts, scoped per env file
+  (`HTUI_ENV` still wins; headless `htui send` keeps its explicit resolution).
+
 ### Changed
 
 - Import: only global variables (`baseUrl`, security schemes) are written to

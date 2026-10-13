@@ -117,3 +117,16 @@ export function appendRegion(content: string, model: RequestModel, name: string)
   const base = content.replace(/\s+$/, '');
   return base ? `${base}\n\n${region}\n` : `${region}\n`;
 }
+
+/**
+ * The headers that actually go out: request headers first, then env `$headers`
+ * that are not overridden. A same-name request header always wins
+ * (case-insensitive) — the file is truth, the env is a fallback.
+ */
+export function mergeEnvHeaders(model: RequestModel, envHeaders: Record<string, string>): RequestModel {
+  const declared = new Set(model.headers.map((h) => h.name.toLowerCase()));
+  const injected = Object.entries(envHeaders)
+    .filter(([name]) => !declared.has(name.toLowerCase()))
+    .map(([name, value]) => ({ name, value }));
+  return { ...model, headers: [...model.headers, ...injected] };
+}

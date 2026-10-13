@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { HEADER_RE } from '../httpfile';
 import { chordOf, resolveKey, type Action } from '../keys';
 import type { Notice } from '../notice';
-import { REQUEST_LINE_RE, regionText, type RequestModel } from '../request';
+import { REQUEST_LINE_RE, type RequestModel } from '../request';
 import { viewport } from '../rows';
 import { Hints } from './Hints';
 
@@ -12,12 +12,14 @@ import { Hints } from './Hints';
 type Part =
   | { kind: 'request' }
   | { kind: 'header'; index: number }
+  | { kind: 'env' }
   | { kind: 'body'; index: number }
   | { kind: 'blank' };
 
 const TITLE: Record<Part['kind'] | 'add-header', string> = {
   request: 'request line (METHOD url)',
   header: 'header (Name: value)',
+  env: 'env header',
   body: 'body line',
   blank: 'blank line',
   'add-header': 'new header (Name: value)',
@@ -30,9 +32,14 @@ const TITLE: Record<Part['kind'] | 'add-header', string> = {
  * back to the `.http` file (the region's `###` / `# @name` preamble and every
  * later region are kept); `Ctrl-E` still opens the whole region in `$EDITOR`
  * for structural edits.
+ *
+ * When env `$headers` exist they render after the request headers, dim with an
+ * `⇩ env` tag — display-only: editing or deleting them does nothing here (they
+ * live on the env screen), and `Ctrl-S` can never write them into the file.
  */
 export function RequestPreview({
   model,
+  envHeaders,
   edited,
   error,
   notice,
@@ -41,6 +48,8 @@ export function RequestPreview({
   onAction,
 }: {
   model: RequestModel;
+  /** Global headers from the active env — rendered merged, never editable. */
+  envHeaders?: Record<string, string>;
   edited: boolean;
   error: string;
   /** Transient feedback (copy/save confirmations) — rendered above the hints. */
@@ -55,15 +64,25 @@ export function RequestPreview({
   const [editing, setEditing] = useState<Part | { kind: 'add-header' } | null>(null);
   const [fieldError, setFieldError] = useState('');
 
-  const lines = regionText(model).replace(/\n$/, '').split('\n');
+  const envRows = Object.entries(envHeaders ?? {}).filter(([name]) =>
+    model.headers.every((h) => h.name.toLowerCase() !== name.toLowerCase()),
+  );
+  const headerCount = model.headers.length + envRows.length;
+  const lines = [
+    `${model.method} ${model.url}`,
+    ...model.headers.map((h) => `${h.name}: ${h.value}`),
+    ...envRows.map(([name, value]) => `${name}: ${value}`),
+    ...(model.body ? ['', ...model.body.split('\n')] : []),
+  ];
 
-  /** The part a display line edits (the blank separator is not editable). */
+  /** The part a display line edits (env rows and the blank separator are not editable). */
   function partAt(i: number): Part {
     if (i === 0) return { kind: 'request' };
     const h = i - 1;
     if (h < model.headers.length) return { kind: 'header', index: h };
+    if (h - model.headers.length < envRows.length) return { kind: 'env' };
     if (model.body) {
-      const rel = i - 1 - model.headers.length;
+      const rel = i - 1 - headerCount;
       if (rel >= 1) return { kind: 'body', index: rel - 1 };
     }
     return { kind: 'blank' };
@@ -108,7 +127,7 @@ export function RequestPreview({
   function handle(action: Action | null): void {
     if (action === 'edit-field') {
       const part = partAt(cursor);
-      if (part.kind !== 'blank') {
+      if (part.kind !== 'blank' && part.kind !== 'env') {
         setFieldError('');
         setEditing(part);
       }
@@ -158,7 +177,13 @@ export function RequestPreview({
       <Text bold>Request{edited ? ' · edited (Ctrl-S saves)' : ''}</Text>
       {lines.slice(start, end).map((line, k) => {
         const i = start + k;
-        return (
+        const fromEnv = i > model.headers.length && i <= headerCount;
+        return fromEnv ? (
+          <Text key={i} dimColor>
+            {i === cursor ? '❯ ' : '  '}
+            {line || ' '}  ⇩ env
+          </Text>
+        ) : (
           <Text key={i} color={i === cursor ? 'cyan' : undefined}>
             {i === cursor ? '❯ ' : '  '}
             {line || ' '}

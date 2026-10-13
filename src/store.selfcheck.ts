@@ -2,7 +2,19 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { collectionEnv, htuiHome, mergeEnv, readEnvNames, readRecency, recencyPath, sanitizeName, slugify, writeRecency } from './store';
+import {
+  collectionEnv,
+  envFileWithRows,
+  envRowsOf,
+  htuiHome,
+  mergeEnv,
+  readEnvNames,
+  readRecency,
+  recencyPath,
+  sanitizeName,
+  slugify,
+  writeRecency,
+} from './store';
 
 // --- pure: naming ---
 assert.equal(sanitizeName('petstore'), 'petstore');
@@ -65,5 +77,28 @@ try {
 
 delete process.env.HTUI_HOME;
 assert.ok(htuiHome().length > 0);
+
+// --- env rows: rename leaves no orphan, non-string values survive ---
+const envContent = `${JSON.stringify({
+  dev: { token: 'abc', retries: 3, obj: { a: 1 }, $headers: { 'X-G': 'g' }, $reserved: 'keep' },
+  prod: { token: 'prod-secret' },
+})}\n`;
+assert.deepEqual(envRowsOf(envContent, 'dev'), [
+  { kind: 'var', name: 'token', value: 'abc' },
+  { kind: 'header', name: 'X-G', value: 'g' },
+]);
+const renamed = envFileWithRows(envContent, 'dev', [
+  { kind: 'var', name: 'authToken', value: 'abc' },
+  { kind: 'header', name: 'X-G', value: 'g' },
+]);
+const devAfter = JSON.parse(renamed).dev;
+assert.equal(devAfter.token, undefined); // rename left no orphan
+assert.equal(devAfter.authToken, 'abc');
+assert.deepEqual(devAfter.retries, 3); // non-string values survive
+assert.deepEqual(devAfter.obj, { a: 1 });
+assert.equal(devAfter.$reserved, 'keep'); // unknown $-keys survive
+assert.equal(JSON.parse(renamed).prod.token, 'prod-secret'); // other envs untouched
+const noHeaders = JSON.parse(envFileWithRows(envContent, 'dev', [{ kind: 'var', name: 'token', value: 'abc' }])).dev;
+assert.equal('$headers' in noHeaders, false); // empty $headers is removed
 
 console.log('store.selfcheck: ok');

@@ -9,9 +9,10 @@ import { runChain, type ChainEntry } from './chain';
 import { importOpenApi } from './import-openapi';
 import { importProto } from './import-proto';
 import { parseRequests } from './parse';
+import { mergeEnvHeaders, modelSlice, requestModel } from './request';
 import { isOk, type HttpyacRequestResult } from './result';
-import { httpyacOnPath, HTTPYAC_INSTALL_HINT, runRequest, selectRequest } from './run';
-import { collectionDir, collectionsDir, readIndex, sanitizeName, writeIndex } from './store';
+import { httpyacOnPath, HTTPYAC_INSTALL_HINT, runRequest, runTempSlice, selectRequest } from './run';
+import { collectionDir, collectionsDir, readEnvHeaders, readIndex, sanitizeName, writeIndex } from './store';
 
 export interface Flags {
   name?: string;
@@ -175,15 +176,33 @@ export async function sendCommand(args: string[]): Promise<number> {
   }
 
   const activeEnv = env ?? process.env.HTUI_ENV ?? 'default';
+  const req = selected.req;
   let target: HttpyacRequestResult | undefined;
   let prerequisites: ChainEntry[] = [];
   try {
+    // Global headers from the env's $headers apply headless too — but the env
+    // itself stays explicit (flag / HTUI_ENV / default): scripts stay reproducible.
+    const envHeaders = await readEnvHeaders(path.dirname(filePath), activeEnv);
+    const merged = () => mergeEnvHeaders(requestModel(content, req), envHeaders);
     if (chain) {
-      const outcome = await runChain({ file: filePath, content, target: selected.req, env: activeEnv });
+      const outcome = await runChain({
+        file: filePath,
+        content,
+        target: req,
+        env: activeEnv,
+        slice: Object.keys(envHeaders).length ? modelSlice(content, req, merged()) : undefined,
+      });
       target = outcome.target;
       prerequisites = outcome.prerequisites;
+    } else if (Object.keys(envHeaders).length) {
+      target = await runTempSlice({
+        file: filePath,
+        slice: modelSlice(content, req, merged()),
+        req,
+        env: activeEnv,
+      });
     } else {
-      target = await runRequest(filePath, selected.req, activeEnv);
+      target = await runRequest(filePath, req, activeEnv);
     }
   } catch (err) {
     process.stderr.write(`htui send: ${message(err)}\n`);

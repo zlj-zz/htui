@@ -17,6 +17,7 @@ export type Step =
   | 'import'
   | 'new'
   | 'env'
+  | 'env-vars'
   | 'headers'
   | 'pick-headers'
   | 'preview'
@@ -54,6 +55,10 @@ export type Action =
   | 'edit-header'
   | 'delete-header'
   | 'edit-field'
+  | 'add-var'
+  | 'add-env'
+  | 'delete-env'
+  | 'edit-env-vars'
   | 'import-headers'
   | 'overwrite';
 
@@ -92,6 +97,7 @@ const PRIMARY: Partial<Record<Step, Action>> = {
   history: 'resend',
   env: 'select-env',
   headers: 'edit-header',
+  'env-vars': 'edit-header',
   'pick-headers': 'open',
   preview: 'send',
 };
@@ -114,7 +120,8 @@ const PER_STEP: Partial<Record<Step, Record<Chord, Action>>> = {
   },
   search: {},
   history: {},
-  env: { 'ctrl-e': 'edit' },
+  env: { 'ctrl-e': 'edit', e: 'edit-env-vars', a: 'add-env', d: 'delete-env' },
+  'env-vars': { a: 'add-var', h: 'add-header', d: 'delete-header' },
   headers: { a: 'add-header', d: 'delete-header', i: 'import-headers' },
   preview: {
     'ctrl-e': 'edit-preview',
@@ -173,6 +180,10 @@ export const ACTION_LABEL: Record<Action, string> = {
   'edit-header': 'edit',
   'delete-header': 'delete',
   'edit-field': 'edit line',
+  'add-var': 'add var',
+  'add-env': 'add env',
+  'delete-env': 'delete env',
+  'edit-env-vars': 'vars',
   'import-headers': 'reuse headers',
   overwrite: 'overwrite',
 };

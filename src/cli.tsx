@@ -2,7 +2,7 @@
 import { Box, Text, render, useApp, useInput } from 'ink';
 import { Spinner } from '@inkjs/ui';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { readFile, rm, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
@@ -10,10 +10,25 @@ import { isStaleGeneration, noticeTtl, type Notice, type NoticeKind } from './no
 import { parseRequests, type HttpRequest } from './parse';
 import { hasResponse, isOk, testIcon, type HttpyacRequestResult, type TestResult } from './result';
 import { runChain, type ChainEntry } from './chain';
-import { httpyacOnPath, HTTPYAC_INSTALL_HINT, isAbort, runRequest } from './run';
+import { httpyacOnPath, HTTPYAC_INSTALL_HINT, isAbort, runRequest, runTempSlice } from './run';
 import { buildWorkspace, listFiles, type IndexedRequest, type ScannedFile } from './workspace';
-import { collectEnvNames, readEnvVars, readRecency, writeRecency, type Recency } from './store';
-import { modelSlice, parseRegionText, regionText, replaceRegion, requestModel, type RequestModel } from './request';
+import {
+  collectEnvNames,
+  envDefiningFile,
+  findEnvFiles,
+  isMissing,
+  readEnvFile,
+  readEnvHeaders,
+  readEnvVars,
+  readRecency,
+  readState,
+  writeFileAtomic,
+  writeEnvFile,
+  writeRecency,
+  writeState,
+  type Recency,
+} from './store';
+import { mergeEnvHeaders, modelSlice, parseRegionText, regionText, replaceRegion, requestModel, type RequestModel } from './request';
 import { openEditor } from './editor';
 import { copyToTerminal, toCurl } from './share';
 import { importCommand, listCommand, parseFlags, printHelp, printVersion, removeCommand, sendCommand } from './commands';
@@ -21,6 +36,7 @@ import { chordOf, resolveKey, type Action, type Step } from './keys';
 import { NewRequestForm } from './ui/NewRequestForm';
 import { Hints } from './ui/Hints';
 import { SearchableList } from './ui/SearchableList';
+import { EnvForm } from './ui/EnvForm';
 import { ImportForm } from './ui/ImportForm';
 import { clipBody, floatToTop } from './rows';
 import { Banner } from './ui/Banner';
@@ -60,24 +76,6 @@ function rawBody(result: HttpyacRequestResult | null): string {
   const body = result?.response?.body;
   if (body == null) return '';
   return typeof body === 'string' ? body : JSON.stringify(body, null, 2);
-}
-
-async function writeFileAtomic(file: string, content: string): Promise<void> {
-  const tmp = `${file}.${randomUUID()}.tmp`;
-  // Rename replaces the file, so carry the original mode over or a 600 `.http`
-  // (it can hold secrets) would widen to the umask default.
-  let mode: number | undefined;
-  try {
-    mode = (await stat(file)).mode;
-  } catch {
-    mode = undefined; // new file: let the umask decide
-  }
-  try {
-    await writeFile(tmp, content, mode === undefined ? 'utf8' : { encoding: 'utf8', mode });
-    await rename(tmp, file);
-  } finally {
-    await rm(tmp, { force: true });
-  }
 }
 
 const relOf = (file: string) => path.relative(process.cwd(), file);
@@ -149,12 +147,18 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
   const [envReturn, setEnvReturn] = useState<'file' | 'request'>('request');
   const [envFile, setEnvFile] = useState('');
   const [envNames, setEnvNames] = useState<string[] | null>(null);
+  const [envVarsCtx, setEnvVarsCtx] = useState<{ file: string; envName: string; content: string } | null>(null);
+  const [envVarsReturn, setEnvVarsReturn] = useState<Step>('env');
+  const [envAdding, setEnvAdding] = useState(false);
+  const [envNameInput, setEnvNameInput] = useState('');
+  const [envDeleteArm, setEnvDeleteArm] = useState<string | null>(null);
   const [headerCtx, setHeaderCtx] = useState<{ file: string; content: string; req: HttpRequest } | null>(null);
   const [headerReturn, setHeaderReturn] = useState<Step>('request');
   const [preview, setPreview] = useState<{
     file: string;
     req: HttpRequest;
     model: RequestModel;
+    envHeaders: Record<string, string>;
     edited: boolean;
     error: string;
   } | null>(null);
@@ -175,6 +179,11 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
     setTimeout(() => {
       if (!isStaleGeneration(generation, noticeGen.current)) setNotice(null);
     }, ttl);
+  }
+
+  /** Fire-and-forget with a visible failure — a dead write must not kill the TUI. */
+  function attempt(promise: Promise<unknown>, what: string) {
+    promise.catch((err: unknown) => showNotice(`${what}: ${err instanceof Error ? err.message : String(err)}`, 'warn'));
   }
   const [bodySearching, setBodySearching] = useState(false);
   const [bodyQuery, setBodyQuery] = useState('');
@@ -274,6 +283,7 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
           return;
         }
         setRequests(reqs);
+        void restoreEnvSelection(file);
       })
       .catch((err: unknown) => fail(err instanceof Error ? err.message : String(err)));
   }, [file, refresh]);
@@ -322,6 +332,9 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
     const controller = new AbortController();
     abortRef.current = controller;
     try {
+      const envHeaders = await readEnvHeaders(path.dirname(target.file), activeEnv);
+      const inject = Object.keys(envHeaders).length > 0;
+      const merged = (model: RequestModel) => mergeEnvHeaders(model, envHeaders);
       let res: HttpyacRequestResult | null;
       if (opts?.model) {
         // Edited in the preview: run the preamble + the rebuilt region, so any
@@ -332,7 +345,7 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
           content,
           target: target.req,
           env: activeEnv,
-          slice: modelSlice(content, target.req, opts.model),
+          slice: modelSlice(content, target.req, inject ? merged(opts.model) : opts.model),
           signal: controller.signal,
         });
         setPrereqs(outcome.prerequisites);
@@ -346,15 +359,23 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
           content,
           target: target.req,
           env: activeEnv,
+          slice: inject ? modelSlice(content, target.req, merged(requestModel(content, target.req))) : undefined,
           signal: controller.signal,
         });
         setPrereqs(outcome.prerequisites);
         res = outcome.target ?? null;
+      } else if (inject) {
+        // Env $headers apply: materialize the merged region (the line index is
+        // preserved) and send that — the `.http` file itself is never touched.
+        const content = await readFile(target.file, 'utf8');
+        const slice = modelSlice(content, target.req, merged(requestModel(content, target.req)));
+        res = await runTempSlice({ file: target.file, slice, req: target.req, env: activeEnv, signal: controller.signal });
       } else {
         res = await runRequest(target.file, target.req, activeEnv, controller.signal);
       }
       setResult(res);
       record(target, res);
+      if (inject) showNotice(`env headers injected (${Object.keys(envHeaders).length})`, 'info');
       setStep('result');
     } catch (err: unknown) {
       if (isAbort(err)) {
@@ -429,7 +450,8 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
   async function openPreview(filePath: string, req: HttpRequest, from: Step) {
     try {
       const content = await readFile(filePath, 'utf8');
-      setPreview({ file: filePath, req, model: requestModel(content, req), edited: false, error: '' });
+      const envHeaders = await readEnvHeaders(path.dirname(filePath), activeEnv);
+      setPreview({ file: filePath, req, model: requestModel(content, req), envHeaders, edited: false, error: '' });
       setPreviewReturn(from);
       setNotice(null);
       setStep('preview');
@@ -450,13 +472,15 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
     try {
       const { file, model } = preview;
       const vars = await previewVars(file);
+      const envHeaders = await readEnvHeaders(path.dirname(file), activeEnv);
+      const effective = mergeEnvHeaders(model, envHeaders);
       const unresolved = new Set<string>();
 
       const url = resolveVars(model.url, vars);
       url.unresolved.forEach((u) => unresolved.add(u));
 
       const headers: Record<string, string> = {};
-      for (const h of model.headers) {
+      for (const h of effective.headers) {
         const value = resolveVars(h.value, vars);
         value.unresolved.forEach((u) => unresolved.add(u));
         headers[h.name] = value.text;
@@ -596,12 +620,47 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
 
   function envAction(action: Action, name?: string) {
     if (appAction(action)) return;
+    setEnvDeleteArm(null);
     if (action === 'select-env' && name) {
       setActiveEnv(name);
+      attempt(persistEnvSelection(name), 'save env selection');
       setStep(envReturn);
+    } else if (action === 'edit-env-vars' && name) {
+      attempt(openEnvVars(envFile || file || '.', name, 'env'), 'open env editor');
+    } else if (action === 'add-env') {
+      setEnvNameInput('');
+      setEnvAdding(true);
+    } else if (action === 'delete-env' && name) {
+      if (envDeleteArm === name) attempt(deleteEnv(name), 'delete env');
+      else {
+        setEnvDeleteArm(name);
+        showNotice(`press d again to delete env "${name}"`, 'warn');
+      }
     } else if (action === 'edit') void editEnv(envFile);
     else if (action === 'back') setStep(envReturn);
   }
+
+  // The add-env name field owns the keyboard while it is up.
+  useInput(
+    (input, key) => {
+      if (key.escape) {
+        setEnvAdding(false);
+        return;
+      }
+      if (key.return) {
+        const name = envNameInput.trim();
+        if (!/^[A-Za-z0-9._-]+$/.test(name)) {
+          showNotice('env name: letters, digits, . _ -', 'warn');
+          return;
+        }
+        void addEnv(name);
+        return;
+      }
+      if (key.backspace || key.delete) setEnvNameInput((v) => v.slice(0, -1));
+      else if (input) setEnvNameInput((v) => v + input.replace(/[\r\n\t]/g, ''));
+    },
+    { isActive: step === 'env' && envAdding },
+  );
 
   function resultAction(action: Action) {
     if (appAction(action)) return;
@@ -613,7 +672,7 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
     else if (action === 'chain' && picked) void send(picked, origin, { chain: true });
     else if (action === 'edit' && picked) void edit(picked.file, picked.req.line);
     else if (action === 'vars' && picked) {
-      void editEnv(path.join(path.dirname(picked.file), 'http-client.env.json'));
+      attempt(openEnvVars(picked.file, activeEnv, 'result'), 'open env editor');
     } else if (action === 'history') {
       setHistoryReturn('result');
       setStep('history');
@@ -634,6 +693,105 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
     const { names, files } = await collectEnvNames(path.dirname(filePath));
     setEnvFile(files[0] ?? path.join(path.dirname(filePath), 'http-client.env.json'));
     setEnvNames(names);
+  }
+
+  /** The selected env survives restarts, scoped to the nearest env file's dir.
+   *  Best-effort: a persistence failure here must never block the launch. */
+  async function restoreEnvSelection(filePath: string) {
+    try {
+      if (process.env.HTUI_ENV) return;
+      const files = await findEnvFiles(path.dirname(filePath));
+      if (!files[0]) return;
+      const saved = (await readState()).env?.[path.dirname(files[0])];
+      if (saved) setActiveEnv(saved);
+    } catch {
+      // selection restore is cosmetic
+    }
+  }
+
+  async function persistEnvSelection(name: string) {
+    if (!envFile) return;
+    const state = await readState();
+    state.env = { ...state.env, [path.dirname(envFile)]: name };
+    await writeState(state);
+  }
+
+  /** Structured editing of one env in the ONE file that defines it. */
+  async function openEnvVars(filePath: string, envName: string, from: Step) {
+    const dir = path.dirname(filePath);
+    const target = (await envDefiningFile(dir, envName)) ?? path.join(dir, 'http-client.env.json');
+    let content = '';
+    let exists = false;
+    try {
+      content = await readFile(target, 'utf8');
+      exists = true;
+    } catch (err) {
+      if (!isMissing(err)) {
+        showNotice(`cannot read ${path.basename(target)}`, 'warn');
+        return;
+      }
+    }
+    if (exists && !(await readEnvFile(target))) {
+      showNotice(`${path.basename(target)} is not valid JSON — edit it with ctrl-e`, 'warn');
+      return;
+    }
+    if (!exists) {
+      // No env file yet: seed a valid skeleton instead of editing into nothing.
+      content = `${JSON.stringify({ [envName]: {} }, null, 2)}\n`;
+      await writeEnvFile(target, JSON.parse(content));
+    }
+    setEnvVarsCtx({ file: target, envName, content });
+    setEnvVarsReturn(from);
+    setStep('env-vars');
+  }
+
+  async function addEnv(name: string) {
+    setEnvAdding(false);
+    const target = envFile || path.join(path.dirname(file ?? process.cwd()), 'http-client.env.json');
+    const data = await readEnvFile(target);
+    if (data === null) {
+      // Only a truly absent file may be created; a corrupt one is never clobbered.
+      try {
+        await readFile(target);
+        showNotice(`${path.basename(target)} is not valid JSON — fix it with ctrl-e first`, 'warn');
+      } catch (err) {
+        if (!isMissing(err)) showNotice(`cannot read ${path.basename(target)}`, 'warn');
+      }
+      return;
+    }
+    if (name in data) {
+      showNotice(`env "${name}" already exists`, 'warn');
+      return;
+    }
+    data[name] = {};
+    await writeEnvFile(target, data);
+    setEnvNames((await collectEnvNames(path.dirname(target))).names);
+    showNotice(`added env ${name}`, 'info');
+  }
+
+  async function deleteEnv(name: string) {
+    setEnvDeleteArm(null);
+    const target = await envDefiningFile(path.dirname(envFile || (file ?? '.')), name);
+    if (!target) {
+      showNotice(`env "${name}" is not defined in any env file`, 'warn');
+      return;
+    }
+    const data = await readEnvFile(target);
+    if (!data) return;
+    delete data[name];
+    await writeEnvFile(target, data);
+    if (activeEnv === name) {
+      setActiveEnv('default');
+      attempt(persistEnvSelection('default'), 'save env selection');
+    }
+    const { names } = await collectEnvNames(path.dirname(envFile));
+    setEnvNames(names);
+    showNotice(
+      names.includes(name)
+        ? `deleted from ${path.basename(target)} — still defined in a parent env file`
+        : `deleted env ${name}`,
+      names.includes(name) ? 'warn' : 'info',
+    );
   }
 
   useInput(
@@ -700,6 +858,28 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
     );
   }
 
+  if (step === 'env-vars') {
+    if (!envVarsCtx) return <Spinner label="Reading environment…" />;
+    return (
+      <EnvForm
+        envFile={envVarsCtx.file}
+        envName={envVarsCtx.envName}
+        content={envVarsCtx.content}
+        notice={notice}
+        onSave={async (next) => {
+          await writeFileAtomic(envVarsCtx.file, next);
+          setEnvVarsCtx({ ...envVarsCtx, content: next });
+          setRefresh((n) => n + 1);
+          showNotice(`saved ${path.basename(envVarsCtx.file)}`, 'info');
+        }}
+        onAction={(action) => {
+          if (action === 'back') setStep(envVarsReturn);
+          else appAction(action);
+        }}
+      />
+    );
+  }
+
   if (step === 'headers') {
     if (!headerCtx) return <Spinner label="Reading request…" />;
     return (
@@ -726,6 +906,7 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
     return (
       <RequestPreview
         model={preview.model}
+        envHeaders={preview.envHeaders}
         edited={preview.edited}
         error={preview.error}
         notice={notice}
@@ -787,6 +968,20 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
   }
 
   if (step === 'env') {
+    if (envAdding) {
+      return (
+        <Box flexDirection="column">
+          <Text bold>Add environment · {relOf(envFile)}</Text>
+          <Text dimColor>Name: letters, digits, . _ - · Esc to cancel</Text>
+          <Text>
+            <Text color="cyan">❯ </Text>
+            {envNameInput}
+            <Text color="cyan">▏</Text>
+          </Text>
+          {notice ? <Text color={notice.kind === 'warn' ? 'yellow' : 'cyan'}>{notice.text}</Text> : null}
+        </Box>
+      );
+    }
     if (!envNames) return <Spinner label="Reading environments…" />;
     return (
       <SearchableList

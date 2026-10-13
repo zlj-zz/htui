@@ -8,7 +8,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
-import { rm, writeFile } from 'node:fs/promises';
+import { rm, stat, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import type { HttpRequest } from './parse';
@@ -73,7 +73,14 @@ export async function runChain(opts: {
   if (opts.env) args.push('-e', opts.env);
 
   try {
-    await writeFile(tempPath, opts.slice ?? sliceUpTo(opts.content, opts.target), 'utf8');
+    // The slice can carry env-header secrets: never land it wider than the original.
+    let mode: number | undefined;
+    try {
+      mode = (await stat(opts.file)).mode;
+    } catch {
+      mode = undefined;
+    }
+    await writeFile(tempPath, opts.slice ?? sliceUpTo(opts.content, opts.target), mode === undefined ? 'utf8' : { encoding: 'utf8', mode });
     let stdout = '';
     let stderr = '';
     try {

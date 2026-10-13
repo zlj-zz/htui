@@ -13,7 +13,7 @@ requests straight from your terminal, backed by plain `.http` files.
 
 ## Requirements
 
-- Node 22+（Ink 8 的要求；`npm` 安装时会强制校验）
+- Node 22+ (required by Ink 8; enforced by `npm` on install)
 - httpyac: `npm i -g httpyac`
 
 ## Install

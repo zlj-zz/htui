@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { appendRegion, modelSlice, parseRegionText, regionText, replaceRegion, requestModel } from './request';
+import { appendRegion, mergeEnvHeaders, modelSlice, parseRegionText, regionText, replaceRegion, requestModel } from './request';
 import { parseRequests } from './parse';
 
 const content = [
@@ -121,5 +121,15 @@ assert.equal(
   replaceRegion(crlf, ca, { method: 'GET', url: 'http://x/a', headers: [{ name: 'X', value: '2' }], body: '' }),
   '### a\r\nGET http://x/a\r\nX: 2\r\n',
 );
+
+// mergeEnvHeaders: request wins, env fills the rest (case-insensitive)
+const withEnv = mergeEnvHeaders(
+  { method: 'GET', url: 'http://x', headers: [{ name: 'authorization', value: 'req' }], body: '' },
+  { Authorization: 'global', 'X-Trace': 't1' },
+);
+assert.deepEqual(withEnv.headers, [
+  { name: 'authorization', value: 'req' },
+  { name: 'X-Trace', value: 't1' },
+]);
 
 console.log('request.selfcheck: ok');
