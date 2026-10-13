@@ -46,7 +46,7 @@ assert.equal(resolveKey('preview', 'ctrl-s'), 'save'); // write the region back
 
 // header reuse: the picker gets its own step so `Enter` means pick
 assert.equal(resolveKey('headers', 'i'), 'import-headers');
-assert.equal(resolveKey('pick-headers', 'enter'), 'open');
+assert.equal(resolveKey('pick-headers', 'enter'), 'import-headers');
 assert.equal(resolveKey('pick-headers', 'escape'), 'back');
 
 // env screen: Enter selects (hot path), e opens the structured vars editor,
@@ -74,9 +74,9 @@ assert.equal(resolveKey('result', 'h'), 'fold-headers');
 assert.equal(resolveKey('result', '/'), 'search-body');
 assert.ok(hintsFor('result').some((h) => h.key === '/' && h.label === 'search body'));
 
-// copy actions live on the preview screen now, not the list or result
+// copy lives on the preview (request body / curl) and on result (response body)
 assert.equal(resolveKey('request', 'y'), null);
-assert.equal(resolveKey('result', 'y'), null);
+assert.equal(resolveKey('result', 'y'), 'copy-resp');
 assert.equal(resolveKey('preview', 'y'), 'copy-body');
 assert.equal(resolveKey('preview', 'Y'), 'copy-curl');
 

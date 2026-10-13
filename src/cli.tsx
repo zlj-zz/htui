@@ -410,6 +410,19 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
     showNotice(`updated ${path.basename(envPath)}`, 'info');
   }
 
+  /** `y` on the result screen: copy the response body as displayed — full and
+   *  unclipped (the on-screen view may be search-filtered and capped at 200 lines). */
+  function copyResponseBody() {
+    const text = bodyText(result?.response?.body);
+    if (!text) {
+      showNotice('no response body', 'warn');
+      return;
+    }
+    const copied = copyToTerminal(text);
+    if (!copied.ok) showNotice('copy failed', 'warn');
+    else showNotice(`copied response body (${copied.bytes} chars)`, 'info');
+  }
+
   async function saveBody(result: HttpyacRequestResult) {
     const target = path.join(os.tmpdir(), `htui-body-${Date.now()}.json`);
     try {
@@ -670,6 +683,7 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
       setStep(resultReturn());
     } else if (action === 'run' && picked) void send(picked, origin);
     else if (action === 'chain' && picked) void send(picked, origin, { chain: true });
+    else if (action === 'copy-resp') copyResponseBody();
     else if (action === 'edit' && picked) void edit(picked.file, picked.req.line);
     else if (action === 'vars' && picked) {
       attempt(openEnvVars(picked.file, activeEnv, 'result'), 'open env editor');

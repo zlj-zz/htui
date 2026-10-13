@@ -48,6 +48,7 @@ export type Action =
   | 'history'
   | 'vars'
   | 'copy-body'
+  | 'copy-resp'
   | 'copy-curl'
   | 'save'
   | 'search-body'
@@ -98,7 +99,7 @@ const PRIMARY: Partial<Record<Step, Action>> = {
   env: 'select-env',
   headers: 'edit-header',
   'env-vars': 'edit-header',
-  'pick-headers': 'open',
+  'pick-headers': 'import-headers',
   preview: 'send',
 };
 
@@ -143,6 +144,7 @@ const PER_STEP: Partial<Record<Step, Record<Chord, Action>>> = {
     v: 'vars',
     t: 'history',
     w: 'save',
+    y: 'copy-resp',
   },
 };
 
@@ -164,7 +166,7 @@ export const ACTION_LABEL: Record<Action, string> = {
   run: 'run',
   chain: 'chain',
   edit: 'edit',
-  'edit-preview': 'edit',
+  'edit-preview': 'editor',
   headers: 'headers',
   'fold-headers': 'headers',
   env: 'env',
@@ -172,7 +174,8 @@ export const ACTION_LABEL: Record<Action, string> = {
   import: 'import',
   history: 'history',
   vars: 'vars',
-  'copy-body': 'copy',
+  'copy-body': 'copy body',
+  'copy-resp': 'copy resp',
   'copy-curl': 'curl',
   save: 'save',
   'search-body': 'search body',

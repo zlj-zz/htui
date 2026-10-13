@@ -67,7 +67,7 @@ export function HeaderForm({
         labelOf={(r) => `${r.method} ${r.url}`}
         hintOf={(r) => (r.name !== 'default' ? r.name : undefined)}
         onAction={(action, r) => {
-          if (action === 'open' && r) {
+          if (action === 'import-headers' && r) {
             // Merge in only names we do not already have; never overwrite a value.
             const have = new Set(headers.map((h) => h.name.toLowerCase()));
             const add: Header[] = [];
