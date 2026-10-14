@@ -292,7 +292,7 @@ export function SearchableList<T>({
   useEffect(() => setGroupCursor((c) => Math.min(c, Math.max(0, groupEntries.length - 1))), [groupEntries.length]);
 
   // Viewport over items; collapsed groups render as a bare header via buildEntries.
-  const size = Math.max(1, maxVisible ?? Math.max(1, (process.stdout.rows ?? 24) - 6));
+  const size = Math.max(1, maxVisible ?? Math.max(1, (process.stdout.rows ?? 24) - 8));
   const { start, end } = viewport(filtered.length, cursor, Math.max(1, size - (showGroups ? 1 : 0)));
   const visible = filtered.slice(start, end);
   const entries = buildEntries(visible, { labelOf, groupOf, showGroups, collapsed, counts: groupCounts });

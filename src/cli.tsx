@@ -134,7 +134,59 @@ interface HistoryEntry {
   status?: number;
 }
 
-function App({ initialFile, initialNew, into }: { initialFile?: string; initialNew?: boolean; into?: string }) {
+const SCREEN_LABEL: Record<Step, string> = {
+  file: 'files',
+  request: 'requests',
+  search: 'search',
+  import: 'import',
+  new: 'new',
+  env: 'env',
+  'env-vars': 'env vars',
+  headers: 'headers',
+  'pick-headers': 'headers',
+  preview: 'preview',
+  sending: 'sending',
+  result: 'result',
+  history: 'history',
+  help: 'help',
+  error: 'error',
+};
+
+/** Tier-1 chrome: file/env/count context strip shown above every content screen. */
+function TopBar({ file, env, count }: { file: string; env: string; count: number | null }) {
+  return (
+    <Box justifyContent="space-between">
+      <Text>
+        <Text bold color="cyan">htui</Text>
+        <Text dimColor> · </Text>
+        {relOf(file)}
+        <Text dimColor> · </Text>
+        <Text color="cyan">env:{env}</Text>
+      </Text>
+      {count != null ? <Text dimColor>{count} requests</Text> : null}
+    </Box>
+  );
+}
+
+/** Tier-1 chrome: current screen, selected request, and the last response, always visible. */
+function StatusBar({ step, picked, result }: { step: Step; picked: Picked | null; result: HttpyacRequestResult | null }) {
+  const parts: string[] = [SCREEN_LABEL[step] ?? step];
+  if (picked) {
+    parts.push(picked.req.name !== 'default' ? picked.req.name : `${picked.req.method} ${picked.req.url}`);
+  }
+  if (result) {
+    const timing = result.duration != null ? ` ${Math.round(result.duration)}ms` : '';
+    parts.push(hasResponse(result.response) ? `${result.response?.statusCode} ${result.response?.statusMessage ?? ''}${timing}`.trim() : `failed${timing}`);
+  }
+  return (
+    <Box flexDirection="column">
+      <Text dimColor>{'─'.repeat(Math.max(8, process.stdout.columns ?? 80))}</Text>
+      <Text dimColor wrap="truncate-end">{parts.join(' · ')}</Text>
+    </Box>
+  );
+}
+
+export function App({ initialFile, initialNew, into }: { initialFile?: string; initialNew?: boolean; into?: string }) {
   const { exit, suspendTerminal } = useApp();
   const [step, setStep] = useState<Step>(initialNew ? 'new' : 'file');
   const [files, setFiles] = useState<ScannedFile[] | null>(null);
@@ -843,304 +895,319 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
     abortRef.current?.abort();
   }
 
-  if (step === 'error') {
-    return (
-      <Box flexDirection="column">
-        <Text color="red">✗ {error}</Text>
-        <Hints step="error" />
-      </Box>
-    );
-  }
-
-  if (step === 'import') {
-    return (
-      <ImportForm
-        onCancel={() => setStep(importReturn)}
-        onAction={appAction}
-        onDone={() => {
-          setStep(importReturn);
-          setRefresh((n) => n + 1);
-        }}
-      />
-    );
-  }
-
-  if (step === 'env-vars') {
-    if (!envVarsCtx) return <Spinner label="Reading environment…" />;
-    return (
-      <EnvForm
-        envFile={envVarsCtx.file}
-        envName={envVarsCtx.envName}
-        content={envVarsCtx.content}
-        notice={notice}
-        onSave={async (next) => {
-          await writeFileAtomic(envVarsCtx.file, next);
-          setEnvVarsCtx({ ...envVarsCtx, content: next });
-          setRefresh((n) => n + 1);
-          showNotice(`saved ${path.basename(envVarsCtx.file)}`, 'info');
-        }}
-        onAction={(action) => {
-          if (action === 'back') setStep(envVarsReturn);
-          else appAction(action);
-        }}
-      />
-    );
-  }
-
-  if (step === 'headers') {
-    if (!headerCtx) return <Spinner label="Reading request…" />;
-    return (
-      <HeaderForm
-        content={headerCtx.content}
-        req={headerCtx.req}
-        notice={notice}
-        onSave={async (next) => {
-          await writeFileAtomic(headerCtx.file, next);
-          setHeaderCtx({ ...headerCtx, content: next });
-          setRefresh((n) => n + 1);
-          showNotice(`headers saved to ${path.basename(headerCtx.file)}`, 'info');
-        }}
-        onAction={(action) => {
-          if (action === 'back') setStep(headerReturn);
-          else appAction(action);
-        }}
-      />
-    );
-  }
-
-  if (step === 'preview') {
-    if (!preview) return <Spinner label="Reading request…" />;
-    return (
-      <RequestPreview
-        model={preview.model}
-        envHeaders={preview.envHeaders}
-        edited={preview.edited}
-        error={preview.error}
-        notice={notice}
-        onModel={(model) => setPreview((p) => (p ? { ...p, model, edited: true, error: '' } : p))}
-        onSave={() => void savePreview()}
-        onAction={(action) => {
-          if (action === 'send')
-            void send(
-              { file: preview.file, req: preview.req },
-              'preview',
-              preview.edited ? { model: preview.model } : {},
-            );
-          else if (action === 'edit-preview') void editPreview();
-          else if (action === 'copy-body') void copyPreviewBody();
-          else if (action === 'copy-curl') void copyPreviewCurl();
-          else if (action === 'back') setStep(previewReturn);
-          else appAction(action);
-        }}
-      />
-    );
-  }
-
-  if (step === 'new') {
-    return (
-      <NewRequestForm
-        into={into}
-        onCancel={() => setStep('file')}
-        onAction={(action) => appAction(action)}
-        onDone={(file, key) => {
-          setFile(file);
-          setRemember((r) => ({ ...r, request: { key, query: '' } }));
-          setRefresh((n) => n + 1);
-          setStep('request');
-        }}
-      />
-    );
-  }
-
-  if (step === 'help') return <Help />;
-
-  if (step === 'history') {
-    return (
-      <SearchableList
-        step="history"
-        header={`History (${history.length})  ·  env:${activeEnv}`}
-        placeholder="filter history…"
-        items={history}
-        keyOf={historyKey}
-        labelOf={historyLabel}
-        hintOf={historyHint}
-        noun="runs"
-        leadOf={historyLead}
-        restore={remember.history}
-        onRemember={(key, query) => rememberStep('history', key, query)}
-        notice={notice}
-        onAction={historyAction}
-      />
-    );
-  }
-
-  if (step === 'env') {
-    if (envAdding) {
+  function screen() {
+    if (step === 'error') {
       return (
         <Box flexDirection="column">
-          <Text bold>Add environment · {relOf(envFile)}</Text>
-          <Text dimColor>Name: letters, digits, . _ - · Esc to cancel</Text>
-          <Text>
-            <Text color="cyan">❯ </Text>
-            {envNameInput}
-            <Text color="cyan">▏</Text>
-          </Text>
-          {notice ? <Text color={notice.kind === 'warn' ? 'yellow' : 'cyan'}>{notice.text}</Text> : null}
+          <Text color="red">✗ {error}</Text>
+          <Hints step="error" />
         </Box>
       );
     }
-    if (!envNames) return <Spinner label="Reading environments…" />;
-    return (
-      <SearchableList
-        step="env"
-        header={`Environment · ${relOf(envFile)}  (current: ${activeEnv})`}
-        placeholder="filter environments…"
-        items={envNames}
-        keyOf={envLabel}
-        labelOf={envLabel}
-        noun="environments"
-        restore={remember.env}
-        onRemember={(key, query) => rememberStep('env', key, query)}
-        notice={notice}
-        onAction={envAction}
-      />
-    );
-  }
 
-  if (step === 'file') {
-    if (!files) return <Spinner label="Scanning for .http / .rest files…" />;
-    return (
-      <Box flexDirection="column">
-        <Banner files={files.length} />
-        <SearchableList
-          step="file"
-          header={`Select a file — ${process.cwd()}  ·  env:${activeEnv}`}
-          placeholder="filter files…"
-          items={files}
-          keyOf={fileKey}
-          labelOf={fileLabel}
-          hintOf={fileHint}
-          groupOf={fileGroup}
-          noun="files"
-          restore={remember.file}
-          onRemember={(key, query) => rememberStep('file', key, query)}
-          notice={notice}
-          onAction={fileAction}
+    if (step === 'import') {
+      return (
+        <ImportForm
+          onCancel={() => setStep(importReturn)}
+          onAction={appAction}
+          onDone={() => {
+            setStep(importReturn);
+            setRefresh((n) => n + 1);
+          }}
         />
-      </Box>
-    );
-  }
+      );
+    }
 
-  if (step === 'request') {
-    if (!file) return <Text color="red">No file selected.</Text>;
-    if (!requests) return <Spinner label="Parsing requests…" />;
-    return (
-      <SearchableList
-        step="request"
-        header={`${relOf(file)}  ·  env:${activeEnv}`}
-        placeholder="filter requests…"
-        items={requestItems ?? []}
-        keyOf={reqKey}
-        labelOf={reqLabel}
-        hintOf={reqHint}
-        noun="requests"
-        leadOf={reqLead}
-        groupOf={requestGroup}
-        restore={remember.request}
-        onRemember={(key, query) => rememberStep('request', key, query)}
-        notice={notice}
-        onAction={requestAction}
-      />
-    );
-  }
+    if (step === 'env-vars') {
+      if (!envVarsCtx) return <Spinner label="Reading environment…" />;
+      return (
+        <EnvForm
+          envFile={envVarsCtx.file}
+          envName={envVarsCtx.envName}
+          content={envVarsCtx.content}
+          notice={notice}
+          onSave={async (next) => {
+            await writeFileAtomic(envVarsCtx.file, next);
+            setEnvVarsCtx({ ...envVarsCtx, content: next });
+            setRefresh((n) => n + 1);
+            showNotice(`saved ${path.basename(envVarsCtx.file)}`, 'info');
+          }}
+          onAction={(action) => {
+            if (action === 'back') setStep(envVarsReturn);
+            else appAction(action);
+          }}
+        />
+      );
+    }
 
-  if (step === 'search') {
-    if (!workspace) return <Spinner label="Indexing requests…" />;
-    return (
-      <SearchableList
-        step="search"
-        header={`Search all requests  ·  env:${activeEnv}`}
-        placeholder="search method / url / name / path…"
-        items={workspace}
-        keyOf={searchKey}
-        labelOf={reqLabel}
-        hintOf={searchHint}
-        noun="requests"
-        leadOf={searchLead}
-        restore={remember.search}
-        onRemember={(key, query) => rememberStep('search', key, query)}
-        notice={notice}
-        onAction={searchAction}
-      />
-    );
-  }
+    if (step === 'headers') {
+      if (!headerCtx) return <Spinner label="Reading request…" />;
+      return (
+        <HeaderForm
+          content={headerCtx.content}
+          req={headerCtx.req}
+          notice={notice}
+          onSave={async (next) => {
+            await writeFileAtomic(headerCtx.file, next);
+            setHeaderCtx({ ...headerCtx, content: next });
+            setRefresh((n) => n + 1);
+            showNotice(`headers saved to ${path.basename(headerCtx.file)}`, 'info');
+          }}
+          onAction={(action) => {
+            if (action === 'back') setStep(headerReturn);
+            else appAction(action);
+          }}
+        />
+      );
+    }
 
-  if (step === 'sending') {
+    if (step === 'preview') {
+      if (!preview) return <Spinner label="Reading request…" />;
+      return (
+        <RequestPreview
+          model={preview.model}
+          envHeaders={preview.envHeaders}
+          edited={preview.edited}
+          error={preview.error}
+          notice={notice}
+          onModel={(model) => setPreview((p) => (p ? { ...p, model, edited: true, error: '' } : p))}
+          onSave={() => void savePreview()}
+          onAction={(action) => {
+            if (action === 'send')
+              void send(
+                { file: preview.file, req: preview.req },
+                'preview',
+                preview.edited ? { model: preview.model } : {},
+              );
+            else if (action === 'edit-preview') void editPreview();
+            else if (action === 'copy-body') void copyPreviewBody();
+            else if (action === 'copy-curl') void copyPreviewCurl();
+            else if (action === 'back') setStep(previewReturn);
+            else appAction(action);
+          }}
+        />
+      );
+    }
+
+    if (step === 'new') {
+      return (
+        <NewRequestForm
+          into={into}
+          onCancel={() => setStep('file')}
+          onAction={(action) => appAction(action)}
+          onDone={(file, key) => {
+            setFile(file);
+            setRemember((r) => ({ ...r, request: { key, query: '' } }));
+            setRefresh((n) => n + 1);
+            setStep('request');
+          }}
+        />
+      );
+    }
+
+    if (step === 'help') return <Help />;
+
+    if (step === 'history') {
+      return (
+        <SearchableList
+          step="history"
+          header={`History (${history.length})  ·  env:${activeEnv}`}
+          placeholder="filter history…"
+          items={history}
+          keyOf={historyKey}
+          labelOf={historyLabel}
+          hintOf={historyHint}
+          noun="runs"
+          leadOf={historyLead}
+          restore={remember.history}
+          onRemember={(key, query) => rememberStep('history', key, query)}
+          notice={notice}
+          onAction={historyAction}
+        />
+      );
+    }
+
+    if (step === 'env') {
+      if (envAdding) {
+        return (
+          <Box flexDirection="column">
+            <Text bold>Add environment · {relOf(envFile)}</Text>
+            <Text dimColor>Name: letters, digits, . _ - · Esc to cancel</Text>
+            <Text>
+              <Text color="cyan">❯ </Text>
+              {envNameInput}
+              <Text color="cyan">▏</Text>
+            </Text>
+            {notice ? <Text color={notice.kind === 'warn' ? 'yellow' : 'cyan'}>{notice.text}</Text> : null}
+          </Box>
+        );
+      }
+      if (!envNames) return <Spinner label="Reading environments…" />;
+      return (
+        <SearchableList
+          step="env"
+          header={`Environment · ${relOf(envFile)}  (current: ${activeEnv})`}
+          placeholder="filter environments…"
+          items={envNames}
+          keyOf={envLabel}
+          labelOf={envLabel}
+          noun="environments"
+          restore={remember.env}
+          onRemember={(key, query) => rememberStep('env', key, query)}
+          notice={notice}
+          onAction={envAction}
+        />
+      );
+    }
+
+    if (step === 'file') {
+      if (!files) return <Spinner label="Scanning for .http / .rest files…" />;
+      return (
+        <Box flexDirection="column">
+          <Banner files={files.length} />
+          <SearchableList
+            step="file"
+            header={`Select a file — ${process.cwd()}  ·  env:${activeEnv}`}
+            placeholder="filter files…"
+            items={files}
+            keyOf={fileKey}
+            labelOf={fileLabel}
+            hintOf={fileHint}
+            groupOf={fileGroup}
+            noun="files"
+            restore={remember.file}
+            onRemember={(key, query) => rememberStep('file', key, query)}
+            notice={notice}
+            onAction={fileAction}
+          />
+        </Box>
+      );
+    }
+
+    if (step === 'request') {
+      if (!file) return <Text color="red">No file selected.</Text>;
+      if (!requests) return <Spinner label="Parsing requests…" />;
+      return (
+        <SearchableList
+          step="request"
+          placeholder="filter requests…"
+          items={requestItems ?? []}
+          keyOf={reqKey}
+          labelOf={reqLabel}
+          hintOf={reqHint}
+          noun="requests"
+          leadOf={reqLead}
+          groupOf={requestGroup}
+          restore={remember.request}
+          onRemember={(key, query) => rememberStep('request', key, query)}
+          notice={notice}
+          onAction={requestAction}
+        />
+      );
+    }
+
+    if (step === 'search') {
+      if (!workspace) return <Spinner label="Indexing requests…" />;
+      return (
+        <SearchableList
+          step="search"
+          header={`Search all requests  ·  env:${activeEnv}`}
+          placeholder="search method / url / name / path…"
+          items={workspace}
+          keyOf={searchKey}
+          labelOf={reqLabel}
+          hintOf={searchHint}
+          noun="requests"
+          leadOf={searchLead}
+          restore={remember.search}
+          onRemember={(key, query) => rememberStep('search', key, query)}
+          notice={notice}
+          onAction={searchAction}
+        />
+      );
+    }
+
+    if (step === 'sending') {
+      return (
+        <Box flexDirection="column">
+          <Spinner label={`Sending ${picked?.req.method} ${picked?.req.url} …`} />
+          <Hints step="sending" />
+        </Box>
+      );
+    }
+
+    const response = result?.response;
+    // A response without a status code means the request never completed.
+    const completed = hasResponse(response);
+    const tests = result?.testResults ?? [];
+
     return (
       <Box flexDirection="column">
-        <Spinner label={`Sending ${picked?.req.method} ${picked?.req.url} …`} />
-        <Hints step="sending" />
+        <Text color={completed ? statusColor(response?.statusCode) : 'red'}>
+          {picked?.req.method} {picked?.req.url} →{' '}
+          {completed ? `${response?.statusCode} ${response?.statusMessage ?? ''}` : 'failed'}
+          {result?.duration != null ? `  ${Math.round(result.duration)}ms` : ''}
+        </Text>
+        {picked ? <Text dimColor>{relOf(picked.file)}</Text> : null}
+
+        {completed ? (
+          <>
+            {response?.headers ? (
+              showHeaders ? (
+                <Text dimColor>{headersView}</Text>
+              ) : (
+                <Text dimColor>▸ headers({Object.keys(response.headers).length}) · h to expand</Text>
+              )
+            ) : null}
+            {bodySearching ? (
+              <Text>
+                <Text color="cyan">❯ </Text>
+                {bodyQuery || <Text dimColor>filter body… (Enter keep · Esc clear)</Text>}
+                <Text dimColor>{`  ${bodyMatches.length} ${bodyQuery ? 'matches' : 'lines'}`}</Text>
+              </Text>
+            ) : null}
+            <Box marginTop={1}>
+              <Text>{bodyView}</Text>
+            </Box>
+          </>
+        ) : (
+          <Box marginTop={1} flexDirection="column">
+            {result?.stderr ? <Text color="red">{clipBody(result.stderr)}</Text> : null}
+            {tests.length === 0 ? (
+              result?.stderr ? null : <Text color="red">no response</Text>
+            ) : (
+              tests.map((t, i) => <TestLine key={i} test={t} />)
+            )}
+          </Box>
+        )}
+
+        {completed && tests.length ? (
+          <Box marginTop={1} flexDirection="column">
+            {tests.map((t, i) => (
+              <TestLine key={i} test={t} />
+            ))}
+          </Box>
+        ) : null}
+
+        <Text color={notice?.kind === 'warn' ? 'yellow' : 'cyan'}>{notice?.text ?? ' '}</Text>
+        <Box marginTop={1} flexDirection="column">
+          <Hints step="result" />
+        </Box>
       </Box>
     );
   }
-
-  const response = result?.response;
-  // A response without a status code means the request never completed.
-  const completed = hasResponse(response);
-  const tests = result?.testResults ?? [];
 
   return (
     <Box flexDirection="column">
-      <Text color={completed ? statusColor(response?.statusCode) : 'red'}>
-        {picked?.req.method} {picked?.req.url} →{' '}
-        {completed ? `${response?.statusCode} ${response?.statusMessage ?? ''}` : 'failed'}
-        {result?.duration != null ? `  ${Math.round(result.duration)}ms` : ''}
-      </Text>
-      {picked ? <Text dimColor>{relOf(picked.file)}</Text> : null}
-
-      {completed ? (
+      {file ? (
         <>
-          {response?.headers ? (
-            showHeaders ? (
-              <Text dimColor>{headersView}</Text>
-            ) : (
-              <Text dimColor>▸ headers({Object.keys(response.headers).length}) · h to expand</Text>
-            )
-          ) : null}
-          {bodySearching ? (
-            <Text>
-              <Text color="cyan">❯ </Text>
-              {bodyQuery || <Text dimColor>filter body… (Enter keep · Esc clear)</Text>}
-              <Text dimColor>{`  ${bodyMatches.length} ${bodyQuery ? 'matches' : 'lines'}`}</Text>
-            </Text>
-          ) : null}
-          <Box marginTop={1}>
-            <Text>{bodyView}</Text>
-          </Box>
+          <TopBar file={file} env={activeEnv} count={requests?.length ?? null} />
+          <Box flexDirection="column">{screen()}</Box>
+          <StatusBar step={step} picked={picked} result={result} />
         </>
       ) : (
-        <Box marginTop={1} flexDirection="column">
-          {result?.stderr ? <Text color="red">{clipBody(result.stderr)}</Text> : null}
-          {tests.length === 0 ? (
-            result?.stderr ? null : <Text color="red">no response</Text>
-          ) : (
-            tests.map((t, i) => <TestLine key={i} test={t} />)
-          )}
-        </Box>
+        <>{screen()}</>
       )}
-
-      {completed && tests.length ? (
-        <Box marginTop={1} flexDirection="column">
-          {tests.map((t, i) => (
-            <TestLine key={i} test={t} />
-          ))}
-        </Box>
-      ) : null}
-
-      <Text color={notice?.kind === 'warn' ? 'yellow' : 'cyan'}>{notice?.text ?? ' '}</Text>
-      <Box marginTop={1} flexDirection="column">
-        <Hints step="result" />
-      </Box>
     </Box>
   );
 }
