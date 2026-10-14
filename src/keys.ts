@@ -59,6 +59,8 @@ export type Action =
   | 'add-env'
   | 'delete-env'
   | 'edit-env-vars'
+  | 'groups'
+  | 'collapse-group'
   | 'import-headers'
   | 'overwrite';
 
@@ -82,6 +84,7 @@ export function chordOf(input: string, key: KeyLike): Chord | null {
 export function chordLabel(chord: Chord): string {
   if (chord === 'enter') return 'Enter';
   if (chord === 'escape') return 'Esc';
+  if (chord === ' ') return 'Space';
   if (chord.startsWith('ctrl-')) return `Ctrl-${chord.slice(5).toUpperCase()}`;
   return chord;
 }
@@ -111,6 +114,8 @@ const PER_STEP: Partial<Record<Step, Record<Chord, Action>>> = {
   file: { 'ctrl-e': 'edit', i: 'import', s: 'env', 'ctrl-f': 'search' },
   request: {
     r: 'run',
+    g: 'groups',
+    ' ': 'collapse-group',
     h: 'headers',
     i: 'import',
     s: 'env',
@@ -183,6 +188,8 @@ export const ACTION_LABEL: Record<Action, string> = {
   'add-env': 'add env',
   'delete-env': 'delete env',
   'edit-env-vars': 'vars',
+  groups: 'groups',
+  'collapse-group': 'fold',
   'import-headers': 'reuse headers',
   overwrite: 'overwrite',
 };

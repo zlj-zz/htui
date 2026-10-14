@@ -7,6 +7,10 @@ export interface DisplayEntry<T> {
   type: 'group' | 'item';
   label: string;
   item?: T;
+  /** Group rows: rendered as a bare header, items hidden. */
+  collapsed?: boolean;
+  /** Group rows: total items in the group (over the full list). */
+  count?: number;
 }
 
 /** Normalize so macOS NFD paths (APFS) and NFC input compare equal. */
@@ -25,6 +29,21 @@ export function scoreMatch(query: string, target: string): number | null {
   return idx < 0 ? null : idx;
 }
 
+/** The business-domain group of a request URL: scheme/host stripped, version
+ *  segments (`v1`, `api`) skipped, template segments skipped, first remaining
+ *  path segment lowercased; `other` when there is nothing usable. */
+export function urlGroup(url: string): string {
+  const withoutScheme = url.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '');
+  const path = withoutScheme.split(/[?#]/, 1)[0];
+  const slash = path.indexOf('/');
+  const segments = (slash < 0 ? '' : path.slice(slash + 1))
+    .split('/')
+    .filter((s) => s !== '' && !s.includes('{{'));
+  let i = 0;
+  while (i < segments.length && (segments[i].toLowerCase() === 'api' || /^v\d+$/i.test(segments[i]))) i++;
+  return segments[i]?.toLowerCase() ?? 'other';
+}
+
 /** Filter + rank (earlier match first, then original order). Stable. */
 export function filterAndRank<T>(query: string, items: T[], key: (t: T) => string): T[] {
   if (!query.trim()) return items;
@@ -38,16 +57,30 @@ export function filterAndRank<T>(query: string, items: T[], key: (t: T) => strin
 /** Flatten items into render entries, inserting a dim group header on change. */
 export function buildEntries<T>(
   items: T[],
-  opts: { labelOf: (t: T) => string; groupOf?: (t: T) => string | undefined; showGroups: boolean },
+  opts: {
+    labelOf: (t: T) => string;
+    groupOf?: (t: T) => string | undefined;
+    showGroups: boolean;
+    /** Collapsed groups render as a bare header; their items are skipped. */
+    collapsed?: Set<string>;
+    /** Items per group over the full list — shown on collapsed headers. */
+    counts?: Map<string, number>;
+  },
 ): DisplayEntry<T>[] {
   const entries: DisplayEntry<T>[] = [];
   let last: string | undefined;
   for (const item of items) {
     const group = opts.showGroups ? opts.groupOf?.(item) : undefined;
     if (group !== undefined && group !== last) {
-      entries.push({ type: 'group', label: group });
+      entries.push({
+        type: 'group',
+        label: group,
+        collapsed: opts.collapsed?.has(group) ?? false,
+        count: opts.counts?.get(group),
+      });
       last = group;
     }
+    if (group !== undefined && opts.collapsed?.has(group)) continue;
     entries.push({ type: 'item', label: opts.labelOf(item), item });
   }
   return entries;

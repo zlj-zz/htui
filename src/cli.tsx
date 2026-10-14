@@ -37,7 +37,7 @@ import { Hints } from './ui/Hints';
 import { SearchableList } from './ui/SearchableList';
 import { EnvForm } from './ui/EnvForm';
 import { ImportForm } from './ui/ImportForm';
-import { clipBody, floatToTop } from './rows';
+import { clipBody, floatToTop, urlGroup } from './rows';
 import { Banner } from './ui/Banner';
 import { Help } from './ui/Help';
 import { HeaderForm } from './ui/HeaderForm';
@@ -115,6 +115,9 @@ const searchLead = (r: IndexedRequest) => methodLead(r.method);
 const historyLead = (e: HistoryEntry) => methodLead(e.method);
 const historyHint = (e: HistoryEntry) => `${e.ok ? '✓' : '✗'} ${e.status ?? '?'}  ${e.name}`;
 const envLabel = (n: string) => n;
+
+/** Below this many requests a list stays flat — domain headers would be noise. */
+const GROUP_THRESHOLD = 12;
 
 type From = 'request' | 'search' | 'preview';
 interface Picked {
@@ -222,15 +225,33 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
     (file ? recency[file] ?? [] : []).forEach((key, i) => last.set(key, i));
     return last;
   }, [recency, file]);
-  const requestItems = useMemo(
+  const requestItems = useMemo(() => {
+    if (!requests) return requests;
+    // Recently-run requests float to the top; grouped lists pin domain blocks
+    // in one stable (alphabetical) order so they don't reshuffle after a run.
+    const floated = floatToTop(requests, (r) => recentRun.get(`${r.method} ${r.url} ${r.name}`) ?? Number.MAX_SAFE_INTEGER);
+    if (floated.length <= GROUP_THRESHOLD) return floated;
+    return floated
+      .map((r, index) => ({
+        r,
+        index,
+        group: recentRun.has(`${r.method} ${r.url} ${r.name}`) ? 'recent' : urlGroup(r.url),
+      }))
+      .sort(
+        (a, b) =>
+          (a.group === 'recent' ? '' : a.group).localeCompare(b.group === 'recent' ? '' : b.group) ||
+          a.index - b.index,
+      )
+      .map((x) => x.r);
+  }, [requests, recentRun]);
+  const requestGroup = useMemo(
     () =>
-      requests
-        ? floatToTop(requests, (r) => recentRun.get(`${r.method} ${r.url} ${r.name}`) ?? Number.MAX_SAFE_INTEGER)
-        : requests,
-    [requests, recentRun],
+      (r: HttpRequest) => {
+        if (recentRun.has(`${r.method} ${r.url} ${r.name}`)) return 'recent';
+        return requests && requests.length > GROUP_THRESHOLD ? urlGroup(r.url) : undefined;
+      },
+    [recentRun, requests],
   );
-  const requestGroup = (r: HttpRequest) =>
-    recentRun.has(`${r.method} ${r.url} ${r.name}`) ? 'recent' : undefined;
   const [historyReturn, setHistoryReturn] = useState<Step>('result');
   const [helpReturn, setHelpReturn] = useState<Step>('file');
   const [error, setError] = useState('');

@@ -72,6 +72,15 @@ assert.equal(resolveKey('result', 'h'), 'fold-headers');
 assert.equal(resolveKey('result', '/'), 'search-body');
 assert.ok(hintsFor('result').some((h) => h.key === '/' && h.label === 'search body'));
 
+// groups: `g` opens the group index, Space folds the group under the cursor
+assert.equal(resolveKey('request', 'g'), 'groups');
+assert.equal(resolveKey('request', ' '), 'collapse-group');
+assert.equal(chordLabel(' '), 'Space');
+assert.equal(resolveKey('file', 'g'), null);
+assert.equal(resolveKey('file', ' '), null);
+assert.equal(resolveKey('search', 'g'), null);
+assert.equal(resolveKey('env', 'g'), null);
+
 // copy lives on the preview (request body / curl) and on result (response body)
 assert.equal(resolveKey('request', 'y'), null);
 assert.equal(resolveKey('result', 'y'), 'copy-resp');

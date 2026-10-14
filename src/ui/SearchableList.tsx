@@ -1,3 +1,4 @@
+import { TextInput } from '@inkjs/ui';
 import { Box, Text, useInput } from 'ink';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { chordOf, resolveKey, type Action, type Step } from '../keys';
@@ -58,6 +59,10 @@ function Row<T>({
  * narrow, Enter to keep, Esc to clear). Movement and filtering live here; every
  * command key goes through `resolveKey` so it cannot drift from other screens.
  * One instance is mounted per step, so a single `useInput` is safe.
+ *
+ * With a `groupOf`, large lists render domain group headers, `g` opens the group
+ * index (pick one to filter by it) and `Space` folds/unfolds the group under the
+ * cursor — folded groups render as a bare header with their item count.
  */
 export function SearchableList<T>({
   step,
@@ -80,18 +85,61 @@ export function SearchableList<T>({
   const [query, setQuery] = useState(restore?.query ?? '');
   const [filtering, setFiltering] = useState(false);
   const [cursor, setCursor] = useState(0);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [groupMode, setGroupMode] = useState(false);
+  const [groupCursor, setGroupCursor] = useState(0);
 
   const filtered = useMemo(() => filterAndRank(query, items, keyOf), [query, items, keyOf]);
-  const size = Math.max(1, maxVisible ?? Math.max(1, (process.stdout.rows ?? 24) - 6));
-  const { start, end } = viewport(filtered.length, cursor, size);
-  const visible = filtered.slice(start, end);
-  const entries = buildEntries(visible, { labelOf, groupOf, showGroups: !query.trim() });
   const selected = filtered[cursor];
+  const showGroups = !query.trim() && groupOf !== undefined;
+
+  // The group index (`g`): every domain with its size. `recent` is excluded —
+  // it is a transient float, not a navigable group.
+  const groupEntries = useMemo(() => {
+    if (!groupOf) return [];
+    const counts = new Map<string, number>();
+    for (const item of items) {
+      const group = groupOf(item);
+      if (group === undefined || group === 'recent') continue;
+      counts.set(group, (counts.get(group) ?? 0) + 1);
+    }
+    return [...counts.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
+  }, [items, groupOf]);
+
+  // Total items per group, for collapsed headers.
+  const groupCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    if (!showGroups || !groupOf) return counts;
+    for (const item of filtered) {
+      const group = groupOf(item);
+      if (group !== undefined) counts.set(group, (counts.get(group) ?? 0) + 1);
+    }
+    return counts;
+  }, [filtered, showGroups, groupOf]);
+
+  const isHidden = (item: T) => {
+    if (!showGroups || !groupOf) return false;
+    const group = groupOf(item);
+    return group !== undefined && collapsed.has(group);
+  };
+
+  // Cursor movement steps over items hidden inside collapsed groups.
+  const move = (delta: 1 | -1) =>
+    setCursor((c) => {
+      let i = c + delta;
+      while (i >= 0 && i < filtered.length && isHidden(filtered[i])) i += delta;
+      return Math.max(0, Math.min(filtered.length - 1, i));
+    });
 
   useEffect(() => setCursor(0), [query]);
   useEffect(() => {
-    setCursor((c) => Math.min(Math.max(0, c), Math.max(0, filtered.length - 1)));
-  }, [filtered.length]);
+    // Clamp, then rest the cursor on a rendered item (never inside a folded group).
+    setCursor((c) => {
+      let i = Math.min(Math.max(0, c), Math.max(0, filtered.length - 1));
+      while (i < filtered.length - 1 && isHidden(filtered[i])) i++;
+      return i;
+    });
+  }, [filtered.length, collapsed, showGroups, groupOf, filtered]);
 
   // Identity restore: once data arrives, jump to the remembered item (by
   // keyOf identity — line numbers drift after edits/rescans). The remembered
@@ -121,12 +169,43 @@ export function SearchableList<T>({
     return () => setMouse(false);
   }, [isActive, filtering]);
 
+  /** Fold/unfold the group under the cursor. */
+  function toggleGroupCollapse() {
+    if (!showGroups || !groupOf) return;
+    const item = filtered[cursor];
+    if (!item) return;
+    const group = groupOf(item);
+    // `recent` is a transient float, not a navigable group — folding it would
+    // hide recently-run requests with no way back.
+    if (group === undefined || group === 'recent') return;
+    const next = new Set(collapsed);
+    if (next.has(group)) next.delete(group);
+    else next.add(group);
+    // Keep at least one unfolded group — an all-folded list would strand the
+    // cursor (and `r`/Enter) on invisible items.
+    if (groupEntries.every((g) => next.has(g.name))) return;
+    setCollapsed(next);
+    // If the cursor's item just got hidden, rest it on the next visible one.
+    if (next.has(group)) {
+      const hidden = (it: T) => {
+        const g = groupOf(it);
+        return g !== undefined && next.has(g);
+      };
+      setCursor((c) => {
+        for (let i = c + 1; i < filtered.length; i++) if (!hidden(filtered[i])) return i;
+        for (let i = c - 1; i >= 0; i--) if (!hidden(filtered[i])) return i;
+        return c;
+      });
+    }
+  }
+
   useInput(
     (input, key) => {
+      if (groupMode) return;
       const mouse = parseMouse(input);
       if (mouse) {
-        if (mouse.button === WHEEL_UP) setCursor((c) => Math.max(0, c - 1));
-        else if (mouse.button === WHEEL_DOWN) setCursor((c) => Math.min(filtered.length - 1, c + 1));
+        if (mouse.button === WHEEL_UP) move(-1);
+        else if (mouse.button === WHEEL_DOWN) move(1);
         return;
       }
       if (key.meta) return;
@@ -143,11 +222,11 @@ export function SearchableList<T>({
 
       // normal mode — movement and the filter switch stay local
       if (key.upArrow) {
-        setCursor((c) => Math.max(0, c - 1));
+        move(-1);
         return;
       }
       if (key.downArrow) {
-        setCursor((c) => Math.min(filtered.length - 1, c + 1));
+        move(1);
         return;
       }
       if (input === '/') {
@@ -160,10 +239,80 @@ export function SearchableList<T>({
       }
 
       const action = resolveKey(step, chordOf(input, key));
+      if (action === 'groups') {
+        if (groupEntries.length) {
+          setGroupCursor(0);
+          setGroupMode(true);
+        }
+        return;
+      }
+      if (action === 'collapse-group') {
+        toggleGroupCollapse();
+        return;
+      }
       if (action) onAction(action, selected);
     },
     { isActive },
   );
+
+  // The group index owns the keyboard while it is open.
+  useInput(
+    (input, key) => {
+      if (key.upArrow) setGroupCursor((c) => Math.max(0, c - 1));
+      else if (key.downArrow) setGroupCursor((c) => Math.min(groupEntries.length - 1, c + 1));
+      else if (key.return) {
+        const group = groupEntries[groupCursor];
+        if (group) {
+          if (group.name === 'other') {
+            // The fallback group is not a substring of its URLs — it cannot be
+            // a text filter, so Enter just unfolds it.
+            setCollapsed((prev) => {
+              const next = new Set(prev);
+              next.delete('other');
+              return next;
+            });
+          } else {
+            setQuery(group.name); // the group name is a substring of its URLs
+          }
+          setGroupMode(false);
+        }
+      } else if (input === 'u') {
+        // Unfold without filtering — the only way back from a folded group.
+        const group = groupEntries[groupCursor];
+        if (group) setCollapsed((prev) => {
+          const next = new Set(prev);
+          next.delete(group.name);
+          return next;
+        });
+      } else if (key.escape) setGroupMode(false);
+    },
+    { isActive: groupMode },
+  );
+
+  useEffect(() => setGroupCursor((c) => Math.min(c, Math.max(0, groupEntries.length - 1))), [groupEntries.length]);
+
+  // Viewport over items; collapsed groups render as a bare header via buildEntries.
+  const size = Math.max(1, maxVisible ?? Math.max(1, (process.stdout.rows ?? 24) - 6));
+  const { start, end } = viewport(filtered.length, cursor, Math.max(1, size - (showGroups ? 1 : 0)));
+  const visible = filtered.slice(start, end);
+  const entries = buildEntries(visible, { labelOf, groupOf, showGroups, collapsed, counts: groupCounts });
+
+  if (groupMode) {
+    return (
+      <Box flexDirection="column">
+        <Text bold>Groups</Text>
+        {groupEntries.map((group, i) => (
+          <Text key={group.name} color={i === groupCursor ? 'cyan' : undefined}>
+            {i === groupCursor ? '❯ ' : '  '}
+            {collapsed.has(group.name) ? '▸ ' : ''}
+            {group.name} ({group.count})
+          </Text>
+        ))}
+        {groupEntries.length === 0 ? <Text dimColor>{'  (no groups)'}</Text> : null}
+        <Text dimColor>Enter filters · u unfold · Esc back</Text>
+      </Box>
+    );
+  }
 
   return (
     <Box flexDirection="column">
@@ -185,8 +334,9 @@ export function SearchableList<T>({
       {entries.map((entry, i) =>
         entry.type === 'group' ? (
           <Text key={`g${i}`} dimColor>
-            {'  '}
-            {entry.label}
+            {'  '}◆ {entry.label}
+            {entry.count != null ? ` (${entry.count})` : ''}
+            {entry.collapsed ? ' ▸' : ''}
           </Text>
         ) : (
           <Row
