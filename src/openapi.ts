@@ -70,6 +70,7 @@ interface RequestBody {
 
 interface Operation {
   operationId?: string;
+  tags?: string[];
   deprecated?: boolean;
   parameters?: Parameter[];
   requestBody?: RequestBody;
@@ -333,7 +334,14 @@ export function openapiToHttp(doc: OpenApiDoc, opts: EmitOptions): EmittedCollec
       if (body) headers.push(`Content-Type: ${body.contentType}`);
       headers.push('Accept: application/json');
 
-      const lines = [`### ${uniqueName(op, method, route, names)}`, `${method.toUpperCase()} ${url}`, ...headers];
+      // OpenAPI tags become `# @group` markers — the request list groups by them.
+      const group = op.tags?.[0]?.trim().replace(/\s+/g, '-');
+      const lines = [
+        `### ${uniqueName(op, method, route, names)}`,
+        ...(group ? [`# @group ${group}`] : []),
+        `${method.toUpperCase()} ${url}`,
+        ...headers,
+      ];
       if (body) lines.push('', body.text);
       blocks.push(lines.join('\n'));
     }

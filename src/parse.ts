@@ -11,6 +11,8 @@
 export interface HttpRequest {
   /** Resolved name: `# @name` > `### title` > synthesized. */
   name: string;
+  /** `# @group` business-domain marker (written by the importer; drives list grouping). */
+  group?: string;
   method: string;
   url: string;
   /** 1-based request line — the `--line` selector. */
@@ -29,6 +31,7 @@ export const METHODS = [
 const REQ_RE = new RegExp(`^\\s*(${METHODS.join('|')})\\s+(\\S+)`, 'i');
 const SEP_RE = /^#{3,}\s*(.*)$/;
 const NAME_RE = /^\s*#\s*@name\s+(\S+)/i;
+const GROUP_RE = /^\s*#\s*@group\s+(\S+)/i;
 
 export function parseRequests(content: string): HttpRequest[] {
   const lines = content.split(/\r?\n/);
@@ -53,11 +56,14 @@ export function parseRequests(content: string): HttpRequest[] {
     let url: string | null = null;
     let line = region.start + 1;
     let atName: string | null = null;
+    let atGroup: string | null = null;
 
     for (let i = region.start; i <= region.end; i++) {
       const src = lines[i] ?? '';
       const nm = src.match(NAME_RE);
       if (nm && !atName) atName = nm[1];
+      const gg = src.match(GROUP_RE);
+      if (gg && !atGroup) atGroup = gg[1];
       if (!method) {
         const rm = src.match(REQ_RE);
         if (rm) {
@@ -74,6 +80,7 @@ export function parseRequests(content: string): HttpRequest[] {
       name,
       method: method.toUpperCase(),
       url,
+      ...(atGroup ? { group: atGroup } : {}),
       line,
       startLine: region.start + 1,
       endLine: region.end + 1,

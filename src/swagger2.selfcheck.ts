@@ -16,6 +16,7 @@ const v2: Swagger2Doc = {
       parameters: [{ name: 'id', in: 'path', required: true, type: 'integer' }],
       get: {
         operationId: 'getPet',
+        tags: ['pets'],
         parameters: [{ name: 'verbose', in: 'query', type: 'boolean' }],
       },
       put: {
@@ -38,6 +39,7 @@ assert.ok(!('id' in vars)); // per-endpoint params stay out of the env
 assert.match(text, /^GET \{\{baseUrl\}\}\/pets\/\{\{id\}\}$/m);
 assert.match(text, /^PUT \{\{baseUrl\}\}\/pets\/\{\{id\}\}$/m);
 assert.match(text, /^X-Api-Key: \{\{apiKey\}\}$/m); // securityDefinitions -> securitySchemes
+assert.match(text, /^# @group pets$/m); // v2 tags survive conversion + emission
 assert.match(text, /"name": "string"/); // body came through #/definitions -> #/components/schemas
 assert.match(text, /### getPet/);
 assert.match(text, /### updatePet/);

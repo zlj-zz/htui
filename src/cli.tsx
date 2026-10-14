@@ -235,7 +235,7 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
       .map((r, index) => ({
         r,
         index,
-        group: recentRun.has(`${r.method} ${r.url} ${r.name}`) ? 'recent' : urlGroup(r.url),
+        group: recentRun.has(`${r.method} ${r.url} ${r.name}`) ? 'recent' : r.group ?? urlGroup(r.url),
       }))
       .sort(
         (a, b) =>
@@ -248,7 +248,7 @@ function App({ initialFile, initialNew, into }: { initialFile?: string; initialN
     () =>
       (r: HttpRequest) => {
         if (recentRun.has(`${r.method} ${r.url} ${r.name}`)) return 'recent';
-        return requests && requests.length > GROUP_THRESHOLD ? urlGroup(r.url) : undefined;
+        return requests && requests.length > GROUP_THRESHOLD ? (r.group ?? urlGroup(r.url)) : undefined;
       },
     [recentRun, requests],
   );

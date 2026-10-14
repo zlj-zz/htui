@@ -49,6 +49,7 @@ interface Swagger2Parameter {
 
 interface Swagger2Operation {
   operationId?: string;
+  tags?: string[];
   deprecated?: boolean;
   parameters?: Swagger2Parameter[];
   consumes?: string[];
@@ -93,6 +94,7 @@ function convertOperation(op: Swagger2Operation, doc: Swagger2Doc): Record<strin
   const rest = params.filter((p) => p.in !== 'body' && p.in !== 'formData').map(convertParam);
 
   const out: Record<string, unknown> = { operationId: op.operationId, parameters: rest };
+  if (op.tags) out.tags = op.tags;
   if (op.deprecated) out.deprecated = true;
   if (op.security) out.security = op.security;
 

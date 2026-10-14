@@ -6,6 +6,11 @@ assert.deepEqual(parseRequests('GET https://example.com/a'), [
   { name: 'default', method: 'GET', url: 'https://example.com/a', line: 1, startLine: 1, endLine: 1 },
 ]);
 
+// `# @group` is captured for the request-list grouping
+const [grouped] = parseRequests('### login\n# @group auth\nPOST https://example.com/login\n');
+assert.ok(grouped);
+assert.equal(grouped.group, 'auth');
+
 const multi = `
 @host = https://example.com
 

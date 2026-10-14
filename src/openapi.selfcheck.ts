@@ -16,6 +16,7 @@ const spec: OpenApiDoc = {
     '/pets': {
       get: {
         operationId: 'listPets',
+        tags: ['pets'],
         parameters: [{ name: 'limit', in: 'query', required: true, schema: { type: 'integer', default: 20 } }],
       },
       post: {
@@ -55,6 +56,7 @@ assert.match(text, /"name": "string"/);
 // (limit, petId) are referenced by the file but deliberately absent — a send
 // with a missing one fails and names the variable
 assert.deepEqual(Object.keys(vars).sort(), ['baseUrl', 'token']);
+assert.match(text, /^# @group pets$/m); // importer writes tags for list grouping
 
 // determinism
 const again = openapiToHttp(spec, { source: 'petstore.json' });
