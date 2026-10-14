@@ -2,6 +2,7 @@
  * Pure list logic: matching, grouping, viewport math.
  * No React, no I/O — everything here is unit-checkable.
  */
+import stringWidth from 'string-width';
 
 export interface DisplayEntry<T> {
   type: 'group' | 'item';
@@ -101,6 +102,39 @@ export function floatToTop<T>(items: T[], rank: (t: T) => number): T[] {
 
 /** Cap what we render — an unbounded body is the biggest screen-flood source. */
 export const MAX_BODY_LINES = 200;
+
+/**
+ * Hard-wrap one line to `width` display columns (CJK counts as 2).
+ *
+ * Ink can only count the rows it emits itself: an over-wide line is wrapped by
+ * the terminal, which nobody reports back, so every row below it is drawn at the
+ * wrong offset and the panes turn into interleaved fragments. Wrapping here keeps
+ * Ink's row arithmetic honest.
+ */
+export function wrapToWidth(line: string, width: number): string[] {
+  if (width < 1 || stringWidth(line) <= width) return [line];
+  const out: string[] = [];
+  let chunk = '';
+  let used = 0;
+  for (const ch of line) {
+    const w = stringWidth(ch);
+    if (used + w > width) {
+      out.push(chunk);
+      chunk = '';
+      used = 0;
+    }
+    chunk += ch;
+    used += w;
+  }
+  if (chunk) out.push(chunk);
+  return out;
+}
+
+/** Same as `wrapToWidth`, but keeps only the first row and marks the cut. */
+export function truncateToWidth(line: string, width: number): string {
+  if (width < 2 || stringWidth(line) <= width) return line;
+  return `${wrapToWidth(line, width - 1)[0]}…`;
+}
 
 export function clipBody(text: string): string {
   const lines = text.split('\n');

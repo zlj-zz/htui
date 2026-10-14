@@ -34,7 +34,7 @@ export function Help() {
       ))}
       <Box marginTop={1} flexDirection="column">
         <Text dimColor>{'  lists also: ↑↓ move · / filter · wheel scroll'}</Text>
-        <Text dimColor>{'  run = send now · preview = look before sending'}</Text>
+        <Text dimColor>{'  run = send now · preview = look before sending · Tab panes (wide)'}</Text>
       </Box>
       <Box marginTop={1}>
         <Text dimColor>Esc or ? to close</Text>

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { Box, Text, render, useApp, useInput } from 'ink';
+import { Box, Text, render, useApp, useInput, useStdout } from 'ink';
 import { Spinner } from '@inkjs/ui';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { readFile, rm, writeFile } from 'node:fs/promises';
@@ -31,13 +31,13 @@ import { mergeEnvHeaders, modelSlice, parseRegionText, regionText, replaceRegion
 import { openEditor } from './editor';
 import { copyToTerminal, toCurl } from './share';
 import { importCommand, listCommand, parseFlags, printHelp, printVersion, removeCommand, sendCommand } from './commands';
-import { chordOf, resolveKey, type Action, type Step } from './keys';
+import { chordOf, hintLines, resolveKey, type Action, type Step } from './keys';
 import { NewRequestForm } from './ui/NewRequestForm';
 import { Hints } from './ui/Hints';
 import { SearchableList } from './ui/SearchableList';
 import { EnvForm } from './ui/EnvForm';
 import { ImportForm } from './ui/ImportForm';
-import { clipBody, floatToTop, formatMs, jsonSpans, sparkline, urlGroup } from './rows';
+import { clipBody, floatToTop, formatMs, jsonSpans, sparkline, truncateToWidth, urlGroup, wrapToWidth } from './rows';
 import { Banner } from './ui/Banner';
 import { Help } from './ui/Help';
 import { HeaderForm } from './ui/HeaderForm';
@@ -118,6 +118,9 @@ const envLabel = (n: string) => n;
 /** Below this many requests a list stays flat — domain headers would be noise. */
 const GROUP_THRESHOLD = 12;
 
+/** Steps rendered as right-pane detail in the dual-pane (wide) layout. */
+const SPLIT_STEPS: Step[] = ['preview', 'sending', 'result'];
+
 type From = 'request' | 'search' | 'preview';
 interface Picked {
   file: string;
@@ -132,6 +135,26 @@ interface HistoryEntry {
   ok: boolean;
   status?: number;
   duration?: number;
+}
+
+function useTerminalSize(): { columns: number; rows: number } {
+  const { stdout } = useStdout();
+  const stream = stdout as unknown as {
+    columns?: number;
+    rows?: number;
+    on?: (ev: string, cb: () => void) => unknown;
+    off?: (ev: string, cb: () => void) => unknown;
+  };
+  const read = () => ({ columns: stream.columns ?? 80, rows: stream.rows ?? 24 });
+  const [size, setSize] = useState(read);
+  useEffect(() => {
+    const onUpdate = () => setSize(read());
+    stream.on?.('resize', onUpdate);
+    return () => {
+      stream.off?.('resize', onUpdate);
+    };
+  }, [stream]);
+  return size;
 }
 
 const SCREEN_LABEL: Record<Step, string> = {
@@ -153,24 +176,40 @@ const SCREEN_LABEL: Record<Step, string> = {
 };
 
 /** Tier-1 chrome: file/env/count context strip shown above every content screen. */
-function TopBar({ file, env, count }: { file: string; env: string; count: number | null }) {
+function TopBar({ file, env, count, columns }: { file: string; env: string; count: number | null; columns: number }) {
+  const right = count != null ? ` ${count} requests` : '';
   return (
-    <Box justifyContent="space-between">
-      <Text>
-        <Text bold color="cyan">htui</Text>
-        <Text dimColor> · </Text>
-        {relOf(file)}
-        <Text dimColor> · </Text>
-        <Text color="cyan">env:{env}</Text>
-      </Text>
-      {count != null ? <Text dimColor>{count} requests</Text> : null}
+    <Box>
+      <Box width={Math.max(20, columns - right.length)}>
+        <Text wrap="truncate-end">
+          <Text bold color="cyan">htui</Text>
+          <Text dimColor> · </Text>
+          {relOf(file)}
+          <Text dimColor> · </Text>
+          <Text color="cyan">env:{env}</Text>
+        </Text>
+      </Box>
+      {right ? <Text dimColor>{right}</Text> : null}
     </Box>
   );
 }
 
 /** Tier-1 chrome: current screen, selected request, and the last response, always visible. */
-function StatusBar({ step, picked, result }: { step: Step; picked: Picked | null; result: HttpyacRequestResult | null }) {
+function StatusBar({
+  step,
+  picked,
+  result,
+  focus,
+  columns,
+}: {
+  step: Step;
+  picked: Picked | null;
+  result: HttpyacRequestResult | null;
+  focus?: 'list' | 'detail';
+  columns: number;
+}) {
   const parts: string[] = [SCREEN_LABEL[step] ?? step];
+  if (focus) parts.push(`focus ${focus}`);
   if (picked) {
     parts.push(picked.req.name !== 'default' ? picked.req.name : `${picked.req.method} ${picked.req.url}`);
   }
@@ -180,7 +219,7 @@ function StatusBar({ step, picked, result }: { step: Step; picked: Picked | null
   }
   return (
     <Box flexDirection="column">
-      <Text dimColor>{'─'.repeat(Math.max(8, process.stdout.columns ?? 80))}</Text>
+      <Text dimColor>{'─'.repeat(Math.max(8, columns))}</Text>
       <Text dimColor wrap="truncate-end">{parts.join(' · ')}</Text>
     </Box>
   );
@@ -191,7 +230,22 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
   const [step, setStep] = useState<Step>(initialNew ? 'new' : 'file');
   const [files, setFiles] = useState<ScannedFile[] | null>(null);
   const [file, setFile] = useState<string | null>(null);
+  const { columns, rows: terminalRows } = useTerminalSize();
+  const wide = columns >= 100 && file !== null;
+  const narrow = !wide;
+  const [focus, setFocus] = useState<'list' | 'detail'>('list');
+  const [detailFile, setDetailFile] = useState<string | null>(null);
+  // `detailInSplit`: the open detail came from this file's list (not from search).
+  const [detailInSplit, setDetailInSplit] = useState(false);
+  const [previewEditing, setPreviewEditing] = useState(false);
+  // The real split predicate — NOT `wide` alone: a cross-file or search-origin
+  // detail renders single-column even in a wide terminal.
+  const showSplit =
+    wide && (step === 'request' || (SPLIT_STEPS.indexOf(step) >= 0 && detailFile === file && detailInSplit));
   const [requests, setRequests] = useState<HttpRequest[] | null>(null);
+  const [fileContent, setFileContent] = useState('');
+  const [fileEnvHeaders, setFileEnvHeaders] = useState<Record<string, string>>({});
+  const [highlighted, setHighlighted] = useState<HttpRequest | null>(null);
   const [workspace, setWorkspace] = useState<IndexedRequest[] | null>(null);
   const [picked, setPicked] = useState<Picked | null>(null);
   const [origin, setOrigin] = useState<From>('request');
@@ -332,6 +386,12 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
       },
     [recentRun, requests],
   );
+
+  // The highlighted request, parsed for the dual-pane live preview.
+  const highlightedModel = useMemo(
+    () => (fileContent && highlighted ? requestModel(fileContent, highlighted) : null),
+    [fileContent, highlighted],
+  );
   const [historyReturn, setHistoryReturn] = useState<Step>('result');
   const [helpReturn, setHelpReturn] = useState<Step>('file');
   const [error, setError] = useState('');
@@ -374,6 +434,7 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
   useEffect(() => {
     if (!file) return;
     setRequests(null);
+    setHighlighted(null);
     readFile(file, 'utf8')
       .then((content) => {
         const reqs = parseRequests(content);
@@ -382,10 +443,19 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
           return;
         }
         setRequests(reqs);
+        setFileContent(content);
         void restoreEnvSelection(file);
       })
       .catch((err: unknown) => fail(err instanceof Error ? err.message : String(err)));
   }, [file, refresh]);
+
+  // env `$headers` for the active env — the live pane merges them like the preview does
+  useEffect(() => {
+    if (!file) return;
+    void readEnvHeaders(path.dirname(file), activeEnv)
+      .then(setFileEnvHeaders)
+      .catch(() => setFileEnvHeaders({}));
+  }, [file, activeEnv]);
 
   // the cross-file index must not outlive an edit or an import
   useEffect(() => {
@@ -421,6 +491,8 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
 
   async function send(target: Picked, from: From, opts?: { model?: RequestModel }) {
     setPicked(target);
+    setDetailFile(target.file);
+    if (from === 'request') setDetailInSplit(true);
     setOrigin(from);
     setError('');
     setShowHeaders(false);
@@ -454,6 +526,7 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
       if (isAbort(err)) {
         showNotice('cancelled', 'warn');
         setStep(resultReturn());
+        setFocus('list');
         return;
       }
       fail(err instanceof Error ? err.message : String(err));
@@ -534,6 +607,8 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
   }
 
   async function openPreview(filePath: string, req: HttpRequest, from: Step) {
+    setDetailFile(filePath);
+    setDetailInSplit(from === 'request');
     try {
       const content = await readFile(filePath, 'utf8');
       const envHeaders = await readEnvHeaders(path.dirname(filePath), activeEnv);
@@ -680,10 +755,13 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
 
   function requestAction(action: Action, r?: HttpRequest) {
     if (appAction(action)) return;
-    if (action === 'preview' && r && file) void openPreview(file, r, 'request');
-    // `r` runs it right away — the preview sits on Enter, not on the fast path.
-    else if (action === 'run' && r && file) void send({ file, req: r }, 'request');
-    else if (action === 'run' && r && file) void send({ file, req: r }, 'request');
+    // While a request is in flight the left pane is context-only: no re-send,
+    // no re-open, no navigation — Esc (the sending hook) still cancels.
+    if (step === 'sending') return;
+    if (action === 'preview' && r && file) {
+      void openPreview(file, r, 'request');
+      if (!narrow) setFocus('detail'); // the list goes inert while previewing
+    } else if (action === 'run' && r && file) void send({ file, req: r }, 'request');
     else if (action === 'headers' && r && file) void openHeaders(file, r, 'request');
     else if (action === 'edit' && r && file) void edit(file, r.line);
     else if (action === 'import') openImport('request');
@@ -754,6 +832,7 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
       setResult(null);
       setError('');
       setStep(resultReturn());
+      setFocus('list');
     } else if (action === 'run' && picked) void send(picked, origin);
     else if (action === 'copy-resp') copyResponseBody();
     else if (action === 'edit' && picked) void edit(picked.file, picked.req.line);
@@ -887,7 +966,7 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
       const action = resolveKey(step, chordOf(input, key));
       if (action) resultAction(action);
     },
-    { isActive: (step === 'result' || step === 'error') && !bodySearching },
+    { isActive: step === 'error' || (step === 'result' && !bodySearching && (!showSplit || focus === 'detail')) },
   );
 
   useInput(
@@ -917,11 +996,125 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
       } else if (key.backspace || key.delete) setBodyQuery((q) => q.slice(0, -1));
       else if (input) setBodyQuery((q) => q + input.replace(/[\r\n\t]/g, ''));
     },
-    { isActive: step === 'result' && bodySearching },
+    { isActive: step === 'result' && bodySearching && (!showSplit || focus === 'detail') },
   );
+
+  // Tab toggles pane focus — a layout control, deliberately handled here rather
+  // than in keys.ts: GLOBAL feeds every footer/Help, and Tab only means
+  // something in the dual-pane layout. Never while an inline field or the body
+  // search owns the keyboard (their handlers stay active and would be orphaned).
+  useInput((_input, key) => {
+    if (!showSplit || bodySearching || previewEditing) return;
+    if (key.tab) setFocus((f) => (f === 'list' ? 'detail' : 'list'));
+  });
 
   function cancelSend() {
     abortRef.current?.abort();
+  }
+
+  function requestPane(chrome: boolean) {
+    if (!file) return <Text color="red">No file selected.</Text>;
+    if (!requests) return <Spinner label="Parsing requests…" />;
+    return (
+      <SearchableList
+        step="request"
+        isActive={chrome || focus === 'list'}
+        showFooter={chrome}
+        maxVisible={chrome ? undefined : Math.max(3, paneHeight - 4)}
+        anchorKey={picked ? `${picked.req.method} ${picked.req.url} ${picked.req.name}` : undefined}
+        onHighlight={(r) => setHighlighted(r ?? null)}
+        placeholder="filter requests…"
+        items={requestItems ?? []}
+        keyOf={reqKey}
+        labelOf={reqLabel}
+        hintOf={(r) => {
+          const trend = trends.get(`${r.method} ${r.url} ${r.name}`);
+          const name = r.name !== 'default' ? r.name : undefined;
+          return trend ? `${trend.bars} ${formatMs(trend.last)}${name ? ` · ${name}` : ''}` : name;
+        }}
+        noun="requests"
+        leadOf={reqLead}
+        groupOf={requestGroup}
+        restore={remember.request}
+        onRemember={(key, query) => rememberStep('request', key, query)}
+        notice={notice}
+        onAction={requestAction}
+      />
+    );
+  }
+
+  function previewPane(chrome: boolean) {
+    if (!preview) return <Spinner label="Reading request…" />;
+    return (
+      <RequestPreview
+        model={preview.model}
+        envHeaders={preview.envHeaders}
+        edited={preview.edited}
+        error={preview.error}
+        notice={chrome ? notice : null}
+        isActive={chrome || focus === 'detail'}
+        showHints={chrome}
+        onEditing={setPreviewEditing}
+        onModel={(model) => setPreview((p) => (p ? { ...p, model, edited: true, error: '' } : p))}
+        onSave={() => void savePreview()}
+        onAction={(action) => {
+          if (action === 'send')
+            void send({ file: preview.file, req: preview.req }, 'preview', preview.edited ? { model: preview.model } : {});
+          else if (action === 'edit-preview') void editPreview();
+          else if (action === 'copy-body') void copyPreviewBody();
+          else if (action === 'copy-curl') void copyPreviewCurl();
+          else if (action === 'back') {
+            setStep(previewReturn);
+            setFocus('list');
+          } else appAction(action);
+        }}
+      />
+    );
+  }
+
+  function sendingPane(chrome: boolean) {
+    return (
+      <Box flexDirection="column">
+        <Spinner label={`Sending ${picked?.req.method} ${picked?.req.url} …`} />
+        {chrome ? <Hints step="sending" /> : null}
+      </Box>
+    );
+  }
+
+  /** Read-only preview of the highlighted request — the right pane is never empty. */
+  function livePane() {
+    if (!highlightedModel) {
+      return (
+        <Box flexDirection="column" paddingY={1}>
+          <Text dimColor>REQUEST</Text>
+          <Text> </Text>
+          <Text dimColor>Select a request to see it here</Text>
+        </Box>
+      );
+    }
+    const lines = regionText(mergeEnvHeaders(highlightedModel, fileEnvHeaders)).replace(/\n$/, '').split('\n');
+    const room = Math.max(1, paneHeight - 4);
+    const shown = lines.slice(0, room);
+    return (
+      <Box flexDirection="column">
+        <Text dimColor>REQUEST</Text>
+        {shown.map((line, i) => (
+          <Text key={i} wrap="truncate-end" dimColor={i > 0}>
+            {line || ' '}
+          </Text>
+        ))}
+        {lines.length > shown.length ? (
+          <Text dimColor>… +{lines.length - shown.length} more lines · Enter to edit</Text>
+        ) : null}
+      </Box>
+    );
+  }
+
+  function detailPane() {
+    if (step === 'preview') return previewPane(false);
+    if (step === 'sending') return sendingPane(false);
+    if (step === 'result') return resultPane(false);
+    return livePane();
   }
 
   function screen() {
@@ -990,33 +1183,7 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
       );
     }
 
-    if (step === 'preview') {
-      if (!preview) return <Spinner label="Reading request…" />;
-      return (
-        <RequestPreview
-          model={preview.model}
-          envHeaders={preview.envHeaders}
-          edited={preview.edited}
-          error={preview.error}
-          notice={notice}
-          onModel={(model) => setPreview((p) => (p ? { ...p, model, edited: true, error: '' } : p))}
-          onSave={() => void savePreview()}
-          onAction={(action) => {
-            if (action === 'send')
-              void send(
-                { file: preview.file, req: preview.req },
-                'preview',
-                preview.edited ? { model: preview.model } : {},
-              );
-            else if (action === 'edit-preview') void editPreview();
-            else if (action === 'copy-body') void copyPreviewBody();
-            else if (action === 'copy-curl') void copyPreviewCurl();
-            else if (action === 'back') setStep(previewReturn);
-            else appAction(action);
-          }}
-        />
-      );
-    }
+    if (step === 'preview') return previewPane(true);
 
     if (step === 'new') {
       return (
@@ -1113,31 +1280,7 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
       );
     }
 
-    if (step === 'request') {
-      if (!file) return <Text color="red">No file selected.</Text>;
-      if (!requests) return <Spinner label="Parsing requests…" />;
-      return (
-        <SearchableList
-          step="request"
-          placeholder="filter requests…"
-          items={requestItems ?? []}
-          keyOf={reqKey}
-          labelOf={reqLabel}
-          hintOf={(r) => {
-            const trend = trends.get(`${r.method} ${r.url} ${r.name}`);
-            const name = r.name !== 'default' ? r.name : undefined;
-            return trend ? `${trend.bars} ${formatMs(trend.last)}${name ? ` · ${name}` : ''}` : name;
-          }}
-          noun="requests"
-          leadOf={reqLead}
-          groupOf={requestGroup}
-          restore={remember.request}
-          onRemember={(key, query) => rememberStep('request', key, query)}
-          notice={notice}
-          onAction={requestAction}
-        />
-      );
-    }
+    if (step === 'request') return requestPane(true);
 
     if (step === 'search') {
       if (!workspace) return <Spinner label="Indexing requests…" />;
@@ -1160,34 +1303,39 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
       );
     }
 
-    if (step === 'sending') {
-      return (
-        <Box flexDirection="column">
-          <Spinner label={`Sending ${picked?.req.method} ${picked?.req.url} …`} />
-          <Hints step="sending" />
-        </Box>
-      );
-    }
+    if (step === 'sending') return sendingPane(true);
 
+    return resultPane(true);
+  }
+
+  function resultPane(chrome: boolean) {
     const response = result?.response;
     // A response without a status code means the request never completed.
     const completed = hasResponse(response);
     const tests = result?.testResults ?? [];
+    // Wrap ourselves: a line the terminal wraps is a row Ink never counted, and
+    // every row below it then lands at the wrong offset.
+    const wrap = (text: string) => text.split('\n').flatMap((line) => wrapToWidth(line, detailWidth));
+    const bodyRows = wrap(bodyView);
+    const bodyShown = bodyRows.slice(0, Math.max(1, paneHeight - 5));
 
     return (
       <Box flexDirection="column">
         <Text color={completed ? statusColor(response?.statusCode) : 'red'}>
-          {picked?.req.method} {picked?.req.url} →{' '}
-          {completed ? `${response?.statusCode} ${response?.statusMessage ?? ''}` : 'failed'}
-          {result?.duration != null ? `  ${formatMs(result.duration)}` : ''}
+          {truncateToWidth(
+            `${picked?.req.method} ${picked?.req.url} → ${
+              completed ? `${response?.statusCode} ${response?.statusMessage ?? ''}` : 'failed'
+            }${result?.duration != null ? `  ${formatMs(result.duration)}` : ''}`,
+            detailWidth,
+          )}
         </Text>
-        {picked ? <Text dimColor>{relOf(picked.file)}</Text> : null}
+        {picked ? <Text dimColor>{truncateToWidth(relOf(picked.file), detailWidth)}</Text> : null}
 
         {completed ? (
           <>
             {response?.headers ? (
               showHeaders ? (
-                <Text dimColor>{headersView}</Text>
+                <Text dimColor>{wrap(headersView).join('\n')}</Text>
               ) : (
                 <Text dimColor>▸ headers({Object.keys(response.headers).length}) · h to expand</Text>
               )
@@ -1200,8 +1348,10 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
               </Text>
             ) : null}
             <Box marginTop={1} flexDirection="column">
+              {/* shortcut: jsonSpans runs per wrapped chunk, so a string split across
+                  rows can lose its colour; colour the whole line first if it bothers. */}
               {bodyIsJson
-                ? bodyView.split('\n').map((line, i) => (
+                ? bodyShown.map((line, i) => (
                     <Text key={i} wrap="truncate-end">
                       {jsonSpans(line).map((span, j) => (
                         <Text key={j} color={span.color}>
@@ -1210,12 +1360,15 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
                       ))}
                     </Text>
                   ))
-                : bodyView}
+                : <Text>{bodyShown.join('\n')}</Text>}
+              {bodyShown.length < bodyRows.length ? (
+                <Text dimColor>{`… (+${bodyRows.length - bodyShown.length} more rows)`}</Text>
+              ) : null}
             </Box>
           </>
         ) : (
           <Box marginTop={1} flexDirection="column">
-            {result?.stderr ? <Text color="red">{clipBody(result.stderr)}</Text> : null}
+            {result?.stderr ? <Text color="red">{wrap(clipBody(result.stderr)).join('\n')}</Text> : null}
             {tests.length === 0 ? (
               result?.stderr ? null : <Text color="red">no response</Text>
             ) : (
@@ -1232,21 +1385,60 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
           </Box>
         ) : null}
 
-        <Text color={notice?.kind === 'warn' ? 'yellow' : 'cyan'}>{notice?.text ?? ' '}</Text>
+        <Text color={notice?.kind === 'warn' ? 'yellow' : 'cyan'}>{chrome ? notice?.text ?? ' ' : ' '}</Text>
         <Box marginTop={1} flexDirection="column">
-          <Hints step="result" />
+          {chrome ? <Hints step="result" /> : null}
         </Box>
       </Box>
     );
   }
 
+  // Chrome: TopBar (1) + the packed hints (1..n rows) + StatusBar (rule + text).
+  const hintStep: Step = step === 'sending' ? 'sending' : focus === 'list' ? 'request' : step;
+  const hintRows = Math.max(1, hintLines(hintStep, Math.max(1, columns - 1)).length);
+  const paneHeight = Math.max(6, terminalRows - 3 - hintRows);
+  // Explicit pane widths: a flexGrow right pane gets stretched by long content
+  // (Yoga's flexShrink defaults to 0), which skews the split ratio.
+  const leftWidth = Math.max(24, Math.round((columns * 5) / 12));
+  const rightWidth = Math.max(24, columns - leftWidth);
+  // Inner width of whatever pane shows the detail (borders take 2 columns).
+  const detailWidth = Math.max(20, (showSplit ? rightWidth : columns) - 2);
+
   return (
     <Box flexDirection="column">
       {file ? (
         <>
-          <TopBar file={file} env={activeEnv} count={requests?.length ?? null} />
-          <Box flexDirection="column">{screen()}</Box>
-          <StatusBar step={step} picked={picked} result={result} />
+          <TopBar file={file} env={activeEnv} count={requests?.length ?? null} columns={columns} />
+          {showSplit ? (
+            <>
+              <Box>
+                <Box
+                  width={leftWidth}
+                  height={paneHeight}
+                  borderStyle="round"
+                  borderColor="gray"
+                  overflow="hidden"
+                  flexDirection="column"
+                >
+                  {requestPane(false)}
+                </Box>
+                <Box
+                  width={rightWidth}
+                  height={paneHeight}
+                  borderStyle="round"
+                  borderColor="gray"
+                  overflow="hidden"
+                  flexDirection="column"
+                >
+                  {detailPane()}
+                </Box>
+              </Box>
+              <Hints step={hintStep} indent=" " />
+            </>
+          ) : (
+            <Box flexDirection="column">{screen()}</Box>
+          )}
+          <StatusBar step={step} picked={picked} result={result} focus={showSplit ? focus : undefined} columns={columns} />
         </>
       ) : (
         <>{screen()}</>

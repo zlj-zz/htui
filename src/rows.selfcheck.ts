@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { buildEntries, clipBody, filterAndRank, floatToTop, formatMs, jsonSpans, scoreMatch, sparkline, urlGroup, viewport } from './rows';
+import { buildEntries, clipBody, filterAndRank, floatToTop, formatMs, jsonSpans, scoreMatch, sparkline, truncateToWidth, urlGroup, viewport, wrapToWidth } from './rows';
 
 // urlGroup: scheme/host stripped, version segments skipped, domain extracted
 assert.equal(urlGroup('https://api.example.com/v1/orders/123?id=7'), 'orders');
@@ -123,5 +123,15 @@ assert.deepEqual(
   foldedEntries.map((e) => (e.type === 'group' ? `g:${e.label}:${e.collapsed}:${e.count}` : `i:${e.label}`)),
   ['g:a:true:2', 'g:b:false:1', 'i:item-3'],
 );
+
+// wrapToWidth: over-wide lines must become rows Ink can count (CJK is 2 columns)
+assert.deepEqual(wrapToWidth('short', 20), ['short']);
+assert.deepEqual(wrapToWidth('abcdef', 3), ['abc', 'def']);
+assert.deepEqual(wrapToWidth('a已发b', 4), ['a已', '发b']); // 已/发 are 2 columns each
+assert.equal(wrapToWidth('a'.repeat(500), 40).every((r) => r.length <= 40), true);
+assert.equal(wrapToWidth('', 10)[0], '');
+assert.equal(truncateToWidth('abcdef', 4), 'abc…');
+assert.equal(truncateToWidth('abc', 9), 'abc');
+assert.equal(wrapToWidth('已发货金额', 5).length, 3); // 5 columns fits 2 CJK chars per row
 
 console.log('rows.selfcheck: ok');

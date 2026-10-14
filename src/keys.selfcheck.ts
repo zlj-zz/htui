@@ -80,6 +80,9 @@ assert.equal(resolveKey('file', 'g'), null);
 assert.equal(resolveKey('file', ' '), null);
 assert.equal(resolveKey('search', 'g'), null);
 assert.equal(resolveKey('env', 'g'), null);
+assert.equal(resolveKey('request', 'tab'), null); // Tab is pane focus, handled at the App level
+assert.equal(chordOf('\t', { tab: true }), 'tab');
+assert.equal(hintsFor('request').some((h) => h.key === 'tab'), false);
 
 // copy lives on the preview (request body / curl) and on result (response body)
 assert.equal(resolveKey('request', 'y'), null);

@@ -25,6 +25,13 @@ export interface SearchableListProps<T> {
   placeholder?: string;
   maxVisible?: number;
   isActive?: boolean;
+  /** Re-anchor the cursor by identity when this changes (dual-pane sends). */
+  anchorKey?: string;
+  /** Called with the highlighted item whenever the cursor moves — drives the
+   *  dual-pane live preview. */
+  onHighlight?: (item: T | undefined) => void;
+  /** Hide the count line and footer hints — the split view renders them globally. */
+  showFooter?: boolean;
   /** Every command key is resolved through the shared key map, then lands here. */
   onAction: (action: Action, item: T | undefined) => void;
   /** Last selected key + filter for this screen — restored on mount. */
@@ -78,6 +85,9 @@ export function SearchableList<T>({
   placeholder = 'press / to filter',
   maxVisible,
   isActive = true,
+  anchorKey,
+  onHighlight,
+  showFooter = true,
   onAction,
   restore,
   onRemember,
@@ -291,11 +301,26 @@ export function SearchableList<T>({
 
   useEffect(() => setGroupCursor((c) => Math.min(c, Math.max(0, groupEntries.length - 1))), [groupEntries.length]);
 
+  // Re-anchor the cursor by identity when `anchorKey` changes (a send floats
+  // the request to the top while this list stays mounted in dual-pane mode).
+  useEffect(() => {
+    if (!anchorKey || query.trim()) return;
+    const idx = filtered.findIndex((it) => keyOf(it) === anchorKey);
+    if (idx >= 0) setCursor(idx);
+  }, [anchorKey, filtered, query]);
+
   // Viewport over items; collapsed groups render as a bare header via buildEntries.
   const size = Math.max(1, maxVisible ?? Math.max(1, (process.stdout.rows ?? 24) - 8));
   const { start, end } = viewport(filtered.length, cursor, Math.max(1, size - (showGroups ? 1 : 0)));
   const visible = filtered.slice(start, end);
   const entries = buildEntries(visible, { labelOf, groupOf, showGroups, collapsed, counts: groupCounts });
+
+  // Report the highlighted item so the detail pane can follow the cursor.
+  const onHighlightRef = useRef(onHighlight);
+  onHighlightRef.current = onHighlight;
+  useEffect(() => {
+    onHighlightRef.current?.(selected);
+  }, [selected]);
 
   if (groupMode) {
     return (
@@ -349,14 +374,18 @@ export function SearchableList<T>({
         ),
       )}
       <Text color={notice?.kind === 'warn' ? 'yellow' : 'cyan'}>{notice?.text ?? ' '}</Text>
-      <Text dimColor>
-        {filtered.length === items.length ? `${items.length}` : `${filtered.length}/${items.length}`}
-        {noun ? ` ${noun}` : ''}
-        {start > 0 ? ' ↑' : ''}
-        {end < filtered.length ? ' ↓' : ''}
-        {filtering ? '' : '   [/] filter'}
-      </Text>
-      {!filtering ? <Hints step={step} indent="  " /> : null}
+      {showFooter ? (
+        <>
+          <Text dimColor>
+            {filtered.length === items.length ? `${items.length}` : `${filtered.length}/${items.length}`}
+            {noun ? ` ${noun}` : ''}
+            {start > 0 ? ' ↑' : ''}
+            {end < filtered.length ? ' ↓' : ''}
+            {filtering ? '' : '   [/] filter'}
+          </Text>
+          {!filtering ? <Hints step={step} indent="  " /> : null}
+        </>
+      ) : null}
     </Box>
   );
 }

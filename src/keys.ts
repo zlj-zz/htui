@@ -71,11 +71,13 @@ export interface KeyLike {
   ctrl?: boolean;
   return?: boolean;
   escape?: boolean;
+  tab?: boolean;
 }
 
 export function chordOf(input: string, key: KeyLike): Chord | null {
   if (key.return) return 'enter';
   if (key.escape) return 'escape';
+  if (key.tab) return 'tab';
   if (key.ctrl && input.length === 1) return `ctrl-${input.toLowerCase()}`;
   if (input.length === 1) return input;
   return null;

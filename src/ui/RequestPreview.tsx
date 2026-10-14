@@ -1,6 +1,6 @@
 import { TextInput } from '@inkjs/ui';
 import { Box, Text, useInput } from 'ink';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { HEADER_RE } from '../httpfile';
 import { chordOf, resolveKey, type Action } from '../keys';
 import type { Notice } from '../notice';
@@ -43,6 +43,9 @@ export function RequestPreview({
   edited,
   error,
   notice,
+  isActive = true,
+  showHints = true,
+  onEditing,
   onModel,
   onSave,
   onAction,
@@ -54,6 +57,12 @@ export function RequestPreview({
   error: string;
   /** Transient feedback (copy/save confirmations) — rendered above the hints. */
   notice?: Notice | null;
+  /** In dual-pane mode: keys land here only when this pane has focus. */
+  isActive?: boolean;
+  /** Hide the footer hints — the split view renders them globally. */
+  showHints?: boolean;
+  /** Report whether an inline field editor is open (blocks Tab focus switches). */
+  onEditing?: (editing: boolean) => void;
   /** In-memory edit — applied to this send only until saved. */
   onModel: (model: RequestModel) => void;
   /** Ctrl-S: write the current model back to the `.http` file. */
@@ -63,6 +72,14 @@ export function RequestPreview({
   const [cursor, setCursor] = useState(0);
   const [editing, setEditing] = useState<Part | { kind: 'add-header' } | null>(null);
   const [fieldError, setFieldError] = useState('');
+
+  // The field owns the keyboard while open — the split view must not switch
+  // focus out from under it (the TextInput cannot be disabled).
+  const onEditingRef = useRef(onEditing);
+  onEditingRef.current = onEditing;
+  useEffect(() => {
+    onEditingRef.current?.(editing !== null);
+  }, [editing]);
 
   const envRows = Object.entries(envHeaders ?? {}).filter(([name]) =>
     model.headers.every((h) => h.name.toLowerCase() !== name.toLowerCase()),
@@ -99,7 +116,7 @@ export function RequestPreview({
         setFieldError('');
       }
     },
-    { isActive: editing !== null },
+    { isActive: editing !== null && isActive },
   );
 
   function applyEdit(value: string): void {
@@ -148,7 +165,7 @@ export function RequestPreview({
       if (key.downArrow) return setCursor((c) => Math.min(lines.length - 1, c + 1));
       handle(resolveKey('preview', chordOf(input, key)));
     },
-    { isActive: editing === null },
+    { isActive: editing === null && isActive },
   );
 
   if (editing) {
@@ -179,12 +196,12 @@ export function RequestPreview({
         const i = start + k;
         const fromEnv = i > model.headers.length && i <= headerCount;
         return fromEnv ? (
-          <Text key={i} dimColor>
+          <Text key={i} dimColor wrap="truncate-end">
             {i === cursor ? '❯ ' : '  '}
             {line || ' '}  ⇩ env
           </Text>
         ) : (
-          <Text key={i} color={i === cursor ? 'cyan' : undefined}>
+          <Text key={i} color={i === cursor ? 'cyan' : undefined} wrap="truncate-end">
             {i === cursor ? '❯ ' : '  '}
             {line || ' '}
           </Text>
@@ -194,7 +211,7 @@ export function RequestPreview({
       {end < lines.length ? <Text dimColor>↓ {lines.length - end} more</Text> : null}
       {error ? <Text color="red">✗ {error}</Text> : null}
       <Text color={notice?.kind === 'warn' ? 'yellow' : 'cyan'}>{notice?.text ?? ' '}</Text>
-      <Hints step="preview" />
+      {showHints ? <Hints step="preview" /> : null}
     </Box>
   );
 }
