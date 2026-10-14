@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { buildEntries, clipBody, filterAndRank, floatToTop, scoreMatch, urlGroup, viewport } from './rows';
+import { buildEntries, clipBody, filterAndRank, floatToTop, formatMs, jsonSpans, scoreMatch, sparkline, urlGroup, viewport } from './rows';
 
 // urlGroup: scheme/host stripped, version segments skipped, domain extracted
 assert.equal(urlGroup('https://api.example.com/v1/orders/123?id=7'), 'orders');
@@ -14,6 +14,39 @@ assert.equal(urlGroup('{{petId}}/upload'), 'upload'); // template segments skipp
 assert.equal(urlGroup('{{host}}/docs#/orders/get'), 'docs'); // fragment split
 assert.equal(urlGroup('https://host?a=1/b'), 'other'); // query before any slash
 assert.equal(urlGroup('host#f/x'), 'other'); // fragment before any slash
+
+// sparkline: trend shape over response times
+assert.equal(sparkline([]), '');
+assert.equal(sparkline([5, 5, 5]), '▁▁▁');
+assert.equal(sparkline([4, 1]), '█▁');
+assert.equal(sparkline([1, 2, 3, 4]).length, 4);
+
+// jsonSpans: keys cyan, strings green, numbers yellow, keywords magenta
+assert.deepEqual(jsonSpans('  "token": "abc",'), [
+  { text: '  ' },
+  { text: '"token":', color: 'cyan' },
+  { text: ' ' },
+  { text: '"abc"', color: 'green' },
+  { text: ',' },
+]);
+assert.deepEqual(jsonSpans('  "exp": 3600'), [
+  { text: '  ' },
+  { text: '"exp":', color: 'cyan' },
+  { text: ' ' },
+  { text: '3600', color: 'yellow' },
+]);
+assert.deepEqual(jsonSpans('  "ok": true'), [
+  { text: '  ' },
+  { text: '"ok":', color: 'cyan' },
+  { text: ' ' },
+  { text: 'true', color: 'magenta' },
+]);
+assert.deepEqual(jsonSpans('{'), [{ text: '{' }]);
+
+// formatMs: fixed 2 decimals
+assert.equal(formatMs(182), '182.00ms');
+assert.equal(formatMs(182.345), '182.35ms');
+assert.equal(formatMs(0), '0.00ms');
 
 const k = (s: string) => s;
 

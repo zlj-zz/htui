@@ -107,3 +107,50 @@ export function clipBody(text: string): string {
   if (lines.length <= MAX_BODY_LINES) return text;
   return `${lines.slice(0, MAX_BODY_LINES).join('\n')}\n… (+${lines.length - MAX_BODY_LINES} more lines)`;
 }
+
+// --- response presentation (tier-3): timing trend + JSON coloring ---
+
+const SPARK_CHARS = '▁▂▃▄▅▆▇█';
+
+/** Duration in milliseconds, fixed to 2 decimals (`182.35ms`). */
+export function formatMs(ms: number): string {
+  return `${(Math.round((ms + Number.EPSILON) * 100) / 100).toFixed(2)}ms`;
+}
+
+/** Mini trend over response times; flat bar when all values are equal. */
+export function sparkline(values: number[]): string {
+  if (values.length === 0) return '';
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const span = max - min || 1;
+  return values
+    .map((v) => SPARK_CHARS[Math.min(SPARK_CHARS.length - 1, Math.floor(((v - min) / span) * (SPARK_CHARS.length - 1)))])
+    .join('');
+}
+
+export interface JsonSpan {
+  text: string;
+  color?: string;
+}
+
+const JSON_TOKEN_RE = /("(?:\\.|[^"\\])*")(\s*:)?|\b(?:true|false|null)\b|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/g;
+
+/** Color spans for one pretty-printed JSON line: keys cyan, strings green,
+ *  numbers yellow, keywords magenta. Non-JSON lines come back untouched. */
+export function jsonSpans(line: string): JsonSpan[] {
+  const spans: JsonSpan[] = [];
+  let last = 0;
+  let sawToken = false;
+  for (const m of line.matchAll(JSON_TOKEN_RE)) {
+    sawToken = true;
+    if (m.index > last) spans.push({ text: line.slice(last, m.index) });
+    if (m[2] !== undefined) spans.push({ text: m[1] + m[2], color: 'cyan' });
+    else if (m[1] !== undefined) spans.push({ text: m[1], color: 'green' });
+    else if (/^(?:true|false|null)$/.test(m[0])) spans.push({ text: m[0], color: 'magenta' });
+    else spans.push({ text: m[0], color: 'yellow' });
+    last = m.index + m[0].length;
+  }
+  if (!sawToken) return [{ text: line }];
+  if (last < line.length) spans.push({ text: line.slice(last) });
+  return spans;
+}

@@ -9,6 +9,7 @@ import { importOpenApi } from './import-openapi';
 import { importProto } from './import-proto';
 import { parseRequests } from './parse';
 import { mergeEnvHeaders, modelSlice, requestModel } from './request';
+import { formatMs } from './rows';
 import { isOk, type HttpyacRequestResult } from './result';
 import { httpyacOnPath, HTTPYAC_INSTALL_HINT, runRequest, runTempSlice, selectRequest } from './run';
 import { collectionDir, collectionsDir, readEnvHeaders, readIndex, sanitizeName, writeIndex } from './store';
@@ -218,7 +219,7 @@ function human(target: HttpyacRequestResult | undefined): string {
     return lines.join('\n');
   }
   const r = target.response;
-  const timing = target.duration != null ? ` · ${Math.round(target.duration)}ms` : '';
+  const timing = target.duration != null ? ` · ${formatMs(target.duration)}` : '';
   lines.push(`${r?.statusCode ?? '?'} ${r?.statusMessage ?? ''}${timing}`.trim());
   const body = typeof r?.body === 'string' ? r.body : r?.body != null ? JSON.stringify(r.body, null, 2) : '';
   if (body) lines.push(body);

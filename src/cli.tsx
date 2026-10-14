@@ -37,7 +37,7 @@ import { Hints } from './ui/Hints';
 import { SearchableList } from './ui/SearchableList';
 import { EnvForm } from './ui/EnvForm';
 import { ImportForm } from './ui/ImportForm';
-import { clipBody, floatToTop, urlGroup } from './rows';
+import { clipBody, floatToTop, formatMs, jsonSpans, sparkline, urlGroup } from './rows';
 import { Banner } from './ui/Banner';
 import { Help } from './ui/Help';
 import { HeaderForm } from './ui/HeaderForm';
@@ -94,7 +94,6 @@ const fileKey = (f: ScannedFile) => `${f.source} ${f.relPath}`;
 const fileLabel = (f: ScannedFile) => path.basename(f.file);
 const reqKey = (r: HttpRequest) => `${r.method} ${r.url} ${r.name}`;
 const reqLabel = (r: HttpRequest) => r.url;
-const reqHint = (r: HttpRequest) => (r.name !== 'default' ? r.name : undefined);
 const searchKey = (r: IndexedRequest) => `${r.method} ${r.url} ${r.name} ${r.relPath}`;
 const searchHint = (r: IndexedRequest) => `${r.relPath}${r.name !== 'default' ? ` · ${r.name}` : ''}`;
 const historyKey = (e: HistoryEntry) => `${e.method} ${e.url} ${e.name}`;
@@ -132,6 +131,7 @@ interface HistoryEntry {
   name: string;
   ok: boolean;
   status?: number;
+  duration?: number;
 }
 
 const SCREEN_LABEL: Record<Step, string> = {
@@ -175,7 +175,7 @@ function StatusBar({ step, picked, result }: { step: Step; picked: Picked | null
     parts.push(picked.req.name !== 'default' ? picked.req.name : `${picked.req.method} ${picked.req.url}`);
   }
   if (result) {
-    const timing = result.duration != null ? ` ${Math.round(result.duration)}ms` : '';
+    const timing = result.duration != null ? ` ${formatMs(result.duration)}` : '';
     parts.push(hasResponse(result.response) ? `${result.response?.statusCode} ${result.response?.statusMessage ?? ''}${timing}`.trim() : `failed${timing}`);
   }
   return (
@@ -248,11 +248,39 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
     return query ? bodyLines.filter((line) => line.toLowerCase().includes(query)) : bodyLines;
   }, [bodyLines, bodyQuery]);
   const bodyView = useMemo(() => clipBody(bodyMatches.join('\n')), [bodyMatches]);
+  const bodyIsJson = useMemo(() => {
+    const body = result?.response?.body;
+    if (body == null) return false;
+    if (typeof body !== 'string') return true;
+    try {
+      JSON.parse(body);
+      return true;
+    } catch {
+      return false;
+    }
+  }, [result]);
+
+
   const headersView = useMemo(
     () => (result?.response?.headers ? clipBody(JSON.stringify(result.response.headers, null, 2)) : ''),
     [result],
   );
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+// Response-time trend per request (this session), for the list sparkline.
+  const trends = useMemo(() => {
+    const values = new Map<string, number[]>();
+    for (const e of [...history].reverse()) {
+      if (e.duration == null) continue;
+      const key = `${e.method} ${e.url} ${e.name}`;
+      const list = values.get(key) ?? [];
+      list.push(e.duration);
+      values.set(key, list);
+    }
+    const map = new Map<string, { bars: string; last: number }>();
+    for (const [key, list] of values) map.set(key, { bars: sparkline(list), last: list[list.length - 1] });
+    return map;
+  }, [history]);
+
   // Last-run order per file, persisted to ~/.config/htui/recent.json so the
   // recent-first sort survives restart.
   const [recency, setRecency] = useState<Recency>({});
@@ -373,6 +401,7 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
       name: target.req.name,
       ok,
       status: res?.response?.statusCode,
+      duration: res?.duration,
     };
     setHistory((h) =>
       [entry, ...h.filter((e) => !(e.picked.file === target.file && e.picked.req.startLine === target.req.startLine))].slice(
@@ -1094,7 +1123,11 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
           items={requestItems ?? []}
           keyOf={reqKey}
           labelOf={reqLabel}
-          hintOf={reqHint}
+          hintOf={(r) => {
+            const trend = trends.get(`${r.method} ${r.url} ${r.name}`);
+            const name = r.name !== 'default' ? r.name : undefined;
+            return trend ? `${trend.bars} ${formatMs(trend.last)}${name ? ` · ${name}` : ''}` : name;
+          }}
           noun="requests"
           leadOf={reqLead}
           groupOf={requestGroup}
@@ -1146,7 +1179,7 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
         <Text color={completed ? statusColor(response?.statusCode) : 'red'}>
           {picked?.req.method} {picked?.req.url} →{' '}
           {completed ? `${response?.statusCode} ${response?.statusMessage ?? ''}` : 'failed'}
-          {result?.duration != null ? `  ${Math.round(result.duration)}ms` : ''}
+          {result?.duration != null ? `  ${formatMs(result.duration)}` : ''}
         </Text>
         {picked ? <Text dimColor>{relOf(picked.file)}</Text> : null}
 
@@ -1166,8 +1199,18 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
                 <Text dimColor>{`  ${bodyMatches.length} ${bodyQuery ? 'matches' : 'lines'}`}</Text>
               </Text>
             ) : null}
-            <Box marginTop={1}>
-              <Text>{bodyView}</Text>
+            <Box marginTop={1} flexDirection="column">
+              {bodyIsJson
+                ? bodyView.split('\n').map((line, i) => (
+                    <Text key={i} wrap="truncate-end">
+                      {jsonSpans(line).map((span, j) => (
+                        <Text key={j} color={span.color}>
+                          {span.text}
+                        </Text>
+                      ))}
+                    </Text>
+                  ))
+                : bodyView}
             </Box>
           </>
         ) : (
