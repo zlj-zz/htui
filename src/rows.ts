@@ -136,6 +136,25 @@ export function truncateToWidth(line: string, width: number): string {
   return `${wrapToWidth(line, width - 1)[0]}…`;
 }
 
+/**
+ * Window over a `total`-row body that may draw `room` rows.
+ *
+ * A fixed-height pane must never be handed more rows than it can show: Ink
+ * mis-writes the rows of a box whose children overflow it, so the caller clips.
+ * When it does not fit, one row goes to the position marker.
+ */
+export function bodyWindow(
+  total: number,
+  room: number,
+  scroll: number,
+): { offset: number; count: number; scrollable: boolean; maxScroll: number } {
+  const scrollable = total > room;
+  const fit = Math.max(1, scrollable ? room - 1 : room);
+  const maxScroll = Math.max(0, total - fit);
+  const offset = Math.max(0, Math.min(scroll, maxScroll));
+  return { offset, count: Math.max(0, Math.min(fit, total - offset)), scrollable, maxScroll };
+}
+
 export function clipBody(text: string): string {
   const lines = text.split('\n');
   if (lines.length <= MAX_BODY_LINES) return text;

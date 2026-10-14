@@ -31,13 +31,13 @@ import { mergeEnvHeaders, modelSlice, parseRegionText, regionText, replaceRegion
 import { openEditor } from './editor';
 import { copyToTerminal, toCurl } from './share';
 import { importCommand, listCommand, parseFlags, printHelp, printVersion, removeCommand, sendCommand } from './commands';
-import { chordOf, hintLines, resolveKey, type Action, type Step } from './keys';
+import { chordOf, hintLines, resolveKey, STEPS, type Action, type Step } from './keys';
 import { NewRequestForm } from './ui/NewRequestForm';
 import { Hints } from './ui/Hints';
 import { SearchableList } from './ui/SearchableList';
 import { EnvForm } from './ui/EnvForm';
 import { ImportForm } from './ui/ImportForm';
-import { clipBody, floatToTop, formatMs, jsonSpans, sparkline, truncateToWidth, urlGroup, wrapToWidth } from './rows';
+import { bodyWindow, clipBody, floatToTop, formatMs, jsonSpans, sparkline, truncateToWidth, urlGroup, wrapToWidth } from './rows';
 import { Banner } from './ui/Banner';
 import { Help } from './ui/Help';
 import { HeaderForm } from './ui/HeaderForm';
@@ -248,6 +248,8 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
   const [highlighted, setHighlighted] = useState<HttpRequest | null>(null);
   const [workspace, setWorkspace] = useState<IndexedRequest[] | null>(null);
   const [picked, setPicked] = useState<Picked | null>(null);
+  /** First body row shown in the detail pane (j/k). Reset per response. */
+  const [detailScroll, setDetailScroll] = useState(0);
   const [origin, setOrigin] = useState<From>('request');
   const [searchFrom, setSearchFrom] = useState<'file' | 'request'>('request');
   const [importReturn, setImportReturn] = useState<'file' | 'request'>('file');
@@ -1008,6 +1010,24 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
     if (key.tab) setFocus((f) => (f === 'list' ? 'detail' : 'list'));
   });
 
+  // A new response starts at the top of the body.
+  useEffect(() => {
+    setDetailScroll(0);
+  }, [picked, result]);
+
+  // j/k scroll the response body. Only where the body is what you are looking
+  // at: with the panes split that means focus on the detail pane, and in a
+  // narrow terminal the result screen is the only thing on screen.
+  useInput((input, key) => {
+    if (step !== 'result' || bodySearching || previewEditing) return;
+    if (showSplit && focus !== 'detail') return;
+    // A burst of keys can arrive as one chunk (`jjj`), so count, don't match.
+    const down = key.downArrow ? 1 : (input.match(/j/g) ?? []).length;
+    const up = key.upArrow ? 1 : (input.match(/k/g) ?? []).length;
+    if (down) setDetailScroll((n) => n + down);
+    else if (up) setDetailScroll((n) => Math.max(0, n - up));
+  });
+
   function cancelSend() {
     abortRef.current?.abort();
   }
@@ -1317,7 +1337,19 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
     // every row below it then lands at the wrong offset.
     const wrap = (text: string) => text.split('\n').flatMap((line) => wrapToWidth(line, detailWidth));
     const bodyRows = wrap(bodyView);
-    const bodyShown = bodyRows.slice(0, Math.max(1, paneHeight - 5));
+    // Everything drawn before the body: status, file, headers, the blank line,
+    // and the body-search prompt while it is open.
+    const headerRows = response?.headers && showHeaders ? wrap(headersView) : [];
+    const headRows =
+      1 + (picked ? 1 : 0) + (response?.headers ? (showHeaders ? headerRows.length : 1) : 0) + 1 + (bodySearching ? 1 : 0);
+    const win = bodyWindow(bodyRows.length, detailBudget - headRows, detailScroll);
+    const bodyShown = bodyRows.slice(win.offset, win.offset + win.count);
+    // The failed path is clipped too — stderr can be long.
+    const failRoom = Math.max(1, detailBudget - headRows + (bodySearching ? 1 : 0));
+    const stderrRows = result?.stderr ? wrap(clipBody(result.stderr)) : [];
+    const stderrShown = stderrRows.slice(0, tests.length ? Math.max(1, failRoom - tests.length) : failRoom);
+    const testsShown = tests.slice(0, Math.max(1, failRoom - stderrShown.length));
+    const failHidden = stderrRows.length - stderrShown.length + tests.length - testsShown.length;
 
     return (
       <Box flexDirection="column">
@@ -1361,19 +1393,20 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
                     </Text>
                   ))
                 : <Text>{bodyShown.join('\n')}</Text>}
-              {bodyShown.length < bodyRows.length ? (
-                <Text dimColor>{`… (+${bodyRows.length - bodyShown.length} more rows)`}</Text>
+              {win.scrollable ? (
+                <Text dimColor>{`rows ${win.offset + 1}-${win.offset + bodyShown.length} of ${bodyRows.length}  ·  j/k scroll`}</Text>
               ) : null}
             </Box>
           </>
         ) : (
           <Box marginTop={1} flexDirection="column">
-            {result?.stderr ? <Text color="red">{wrap(clipBody(result.stderr)).join('\n')}</Text> : null}
+            {stderrShown.length ? <Text color="red">{stderrShown.join('\n')}</Text> : null}
             {tests.length === 0 ? (
               result?.stderr ? null : <Text color="red">no response</Text>
             ) : (
-              tests.map((t, i) => <TestLine key={i} test={t} />)
+              testsShown.map((t, i) => <TestLine key={i} test={t} />)
             )}
+            {failHidden > 0 ? <Text dimColor>{`… (+${failHidden} more rows)`}</Text> : null}
           </Box>
         )}
 
@@ -1394,9 +1427,16 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
   }
 
   // Chrome: TopBar (1) + the packed hints (1..n rows) + StatusBar (rule + text).
-  const hintStep: Step = step === 'sending' ? 'sending' : focus === 'list' ? 'request' : step;
+  // The left pane (when it exists) owns the keys whenever it has focus.
+  const hintStep: Step = step === 'sending' ? 'sending' : showSplit && focus === 'list' ? 'request' : step;
   const hintRows = Math.max(1, hintLines(hintStep, Math.max(1, columns - 1)).length);
-  const paneHeight = Math.max(6, terminalRows - 3 - hintRows);
+  // Reserve the tallest screen's hint block: a pane that changes height between
+  // steps shifts every row below it, and Ink then leaves stale fragments behind.
+  const hintRowsMax = Math.max(...STEPS.map((s) => hintLines(s, Math.max(1, columns - 1)).length));
+  const paneHeight = Math.max(6, terminalRows - 3 - hintRowsMax);
+  // Rows the detail pane may draw. Ink mis-writes the rows of a fixed-height box
+  // that is handed more children than it can show, so we clip before it can.
+  const detailBudget = Math.max(4, showSplit ? paneHeight - 2 : terminalRows - 3);
   // Explicit pane widths: a flexGrow right pane gets stretched by long content
   // (Yoga's flexShrink defaults to 0), which skews the split ratio.
   const leftWidth = Math.max(24, Math.round((columns * 5) / 12));
@@ -1420,7 +1460,12 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
                   overflow="hidden"
                   flexDirection="column"
                 >
-                  {requestPane(false)}
+                  {/* flexShrink={0}: Yoga squeezes a fixed-height box's children
+                      by default, and rounded fractional heights leave only every
+                      second or third row — Ink then keeps the stale prefix. */}
+                  <Box flexDirection="column" flexShrink={0}>
+                    {requestPane(false)}
+                  </Box>
                 </Box>
                 <Box
                   width={rightWidth}
@@ -1430,13 +1475,18 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
                   overflow="hidden"
                   flexDirection="column"
                 >
-                  {detailPane()}
+                  <Box flexDirection="column" flexShrink={0}>
+                    {detailPane()}
+                  </Box>
                 </Box>
               </Box>
               <Hints step={hintStep} indent=" " />
+              {Array.from({ length: hintRowsMax - hintRows }, (_, i) => (
+                <Text key={`pad-${i}`}> </Text>
+              ))}
             </>
           ) : (
-            <Box flexDirection="column">{screen()}</Box>
+            <Box flexDirection="column" flexShrink={0}>{screen()}</Box>
           )}
           <StatusBar step={step} picked={picked} result={result} focus={showSplit ? focus : undefined} columns={columns} />
         </>

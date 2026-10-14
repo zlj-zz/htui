@@ -27,6 +27,25 @@ export type Step =
   | 'help'
   | 'error';
 
+/** Every screen, in one place: the layout measures the footer over this list. */
+export const STEPS: Step[] = [
+  'file',
+  'request',
+  'search',
+  'import',
+  'new',
+  'env',
+  'env-vars',
+  'headers',
+  'pick-headers',
+  'preview',
+  'sending',
+  'result',
+  'history',
+  'help',
+  'error',
+];
+
 export type Action =
   | 'help'
   | 'quit'
@@ -207,10 +226,16 @@ export function screenHints(step: Step): Array<{ key: string; label: string }> {
   return hints;
 }
 
+/** Keys the App handles itself (never via resolveKey) but that belong in the footer. */
+const APP_HINTS: Partial<Record<Step, Array<{ key: string; label: string }>>> = {
+  result: [{ key: 'j/k', label: 'scroll' }],
+};
+
 /** Footer hints for a screen: its own keys plus the ones available everywhere. */
 export function hintsFor(step: Step): Array<{ key: string; label: string }> {
   return [
     ...screenHints(step),
+    ...(APP_HINTS[step] ?? []),
     ...Object.entries(GLOBAL).map(([chord, action]) => ({ key: chordLabel(chord), label: ACTION_LABEL[action] })),
   ];
 }

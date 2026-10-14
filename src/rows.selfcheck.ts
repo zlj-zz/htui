@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { buildEntries, clipBody, filterAndRank, floatToTop, formatMs, jsonSpans, scoreMatch, sparkline, truncateToWidth, urlGroup, viewport, wrapToWidth } from './rows';
+import { bodyWindow, buildEntries, clipBody, filterAndRank, floatToTop, formatMs, jsonSpans, scoreMatch, sparkline, truncateToWidth, urlGroup, viewport, wrapToWidth } from './rows';
 
 // urlGroup: scheme/host stripped, version segments skipped, domain extracted
 assert.equal(urlGroup('https://api.example.com/v1/orders/123?id=7'), 'orders');
@@ -133,5 +133,14 @@ assert.equal(wrapToWidth('', 10)[0], '');
 assert.equal(truncateToWidth('abcdef', 4), 'abc…');
 assert.equal(truncateToWidth('abc', 9), 'abc');
 assert.equal(wrapToWidth('已发货金额', 5).length, 3); // 5 columns fits 2 CJK chars per row
+
+// bodyWindow: never more rows than the pane can draw, one row for the marker
+assert.deepEqual(bodyWindow(5, 10, 0), { offset: 0, count: 5, scrollable: false, maxScroll: 0 });
+assert.deepEqual(bodyWindow(30, 10, 0), { offset: 0, count: 9, scrollable: true, maxScroll: 21 });
+assert.deepEqual(bodyWindow(30, 10, 5), { offset: 5, count: 9, scrollable: true, maxScroll: 21 });
+assert.equal(bodyWindow(30, 10, 999).offset, 21); // clamps at the end
+assert.equal(bodyWindow(30, 10, -4).offset, 0); // and at the start
+assert.equal(bodyWindow(0, 10, 0).count, 0);
+assert.equal(bodyWindow(30, 1, 0).count, 1); // a squeezed pane still shows a row
 
 console.log('rows.selfcheck: ok');
