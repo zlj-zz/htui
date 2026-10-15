@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { parseMouse, WHEEL_DOWN, WHEEL_UP } from './mouse';
 
-// Ink hands the sequence through with the leading ESC stripped…
+// The stream listener feeds the raw form (Ink swallows mouse bytes); the
+// ESC-stripped form stays accepted for callers that pre-strip.
 assert.deepEqual(parseMouse('[<64;10;5M'), { button: WHEEL_UP, x: 10, y: 5, release: false });
-// …but accept the raw form too.
+assert.deepEqual(parseMouse('\u001B[<64;10;5M'), { button: WHEEL_UP, x: 10, y: 5, release: false });
 assert.deepEqual(parseMouse('\u001B[<65;3;20M'), { button: WHEEL_DOWN, x: 3, y: 20, release: false });
 assert.deepEqual(parseMouse('[<0;1;1M'), { button: 0, x: 1, y: 1, release: false });
 assert.deepEqual(parseMouse('[<0;1;1m'), { button: 0, x: 1, y: 1, release: true });

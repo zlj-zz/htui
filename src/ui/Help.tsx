@@ -36,6 +36,7 @@ export function Help() {
         <Text dimColor>{'  lists also: ↑↓ move · / filter · wheel scroll'}</Text>
         <Text dimColor>{'  run = send now · preview = look before sending · Tab panes (wide)'}</Text>
         <Text dimColor>{'  result: j/k scroll the body (in a split pane, Tab to the right pane first)'}</Text>
+        <Text dimColor>{'  mouse (dual pane): click focuses/selects · double-click opens · wheel scrolls · shift+drag selects text'}</Text>
       </Box>
       <Box marginTop={1}>
         <Text dimColor>Esc or ? to close</Text>

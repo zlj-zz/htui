@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { chordOf, resolveKey, type Action, type Step } from '../keys';
 import type { Notice } from '../notice';
 import { Hints } from './Hints';
-import { parseMouse, setMouse, WHEEL_DOWN, WHEEL_UP } from '../mouse';
+import { onMouse, setMouse, WHEEL_DOWN, WHEEL_UP, type MouseEvent } from '../mouse';
 import { buildEntries, filterAndRank, viewport, type DisplayEntry } from '../rows';
 
 export interface SearchableListProps<T> {
@@ -38,6 +38,10 @@ export interface SearchableListProps<T> {
   restore?: { key?: string; query?: string };
   /** Called on unmount with the current key/filter, so the next mount can restore. */
   onRemember?: (key: string, query: string) => void;
+  /** Dual-pane mouse rect (screen coords, 1-based, x inclusive): the list
+   *  handles clicks, double-clicks and wheel inside it; the layout owns the
+   *  mouse-reporting toggle. Absent in single-pane screens. */
+  mousePane?: { x0: number; x1: number; y0: number };
 }
 
 function Row<T>({
@@ -91,6 +95,7 @@ export function SearchableList<T>({
   onAction,
   restore,
   onRemember,
+  mousePane,
 }: SearchableListProps<T>) {
   const [query, setQuery] = useState(restore?.query ?? '');
   const [filtering, setFiltering] = useState(false);
@@ -171,13 +176,34 @@ export function SearchableList<T>({
   lastState.current = { key: selected ? keyOf(selected) : '', query };
   useEffect(() => () => onRememberRef.current?.(lastState.current.key, lastState.current.query), []);
 
-  // Mouse reporting is on only while this list owns the keyboard; while
-  // filtering a TextInput is up and would take the raw bytes as text.
+  // Mouse reporting: in the dual pane the layout owns it (it stays on for both
+  // panes); narrow lists toggle it themselves while they own the keyboard.
   useEffect(() => {
+    if (mousePane) return;
     if (!isActive || filtering) return;
     setMouse(true);
     return () => setMouse(false);
-  }, [isActive, filtering]);
+  }, [isActive, filtering, mousePane]);
+
+  // Pane mouse: wheel moves the selection, a click selects the row under the
+  // pointer, a fast second click opens it. Geometry comes from the layout.
+  const mouseRef = useRef<(event: MouseEvent) => void>(() => {});
+  mouseRef.current = (event) => {
+    if (groupMode || filtering) return;
+    if (!mousePane) {
+      // Narrow: reporting is only on while this list owns the keyboard.
+      if (!isActive) return;
+      if (event.button === WHEEL_UP) move(-1);
+      else if (event.button === WHEEL_DOWN) move(1);
+      return;
+    }
+    const { x0, x1, y0 } = mousePane;
+    if (event.x < x0 || event.x > x1 || event.y < y0) return;
+    if (event.button === WHEEL_UP) move(-1);
+    else if (event.button === WHEEL_DOWN) move(1);
+    else if (event.button === 0 && !event.release) clickRow(event.y - y0);
+  };
+  useEffect(() => onMouse((event) => mouseRef.current(event)), []);
 
   /** Fold/unfold the group under the cursor. */
   function toggleGroupCollapse() {
@@ -209,15 +235,28 @@ export function SearchableList<T>({
     }
   }
 
+  /** A click on a pane row: select it; a fast second click opens it. */
+  const lastClick = useRef<{ key: string; t: number } | null>(null);
+  function clickRow(index: number) {
+    const entry = entries[index];
+    if (!entry || entry.type !== 'item' || !entry.item) return; // group headers: the cursor is item-indexed
+    const key = keyOf(entry.item);
+    const absolute = filtered.indexOf(entry.item);
+    if (absolute < 0) return;
+    const now = Date.now();
+    const dbl = lastClick.current?.key === key && now - lastClick.current.t < 400;
+    lastClick.current = { key, t: now };
+    setCursor(absolute);
+    if (dbl) {
+      lastClick.current = null; // a triple-click must not open twice
+      const action = resolveKey(step, 'enter');
+      if (action) onAction(action, entry.item);
+    }
+  }
+
   useInput(
     (input, key) => {
-      if (groupMode) return;
-      const mouse = parseMouse(input);
-      if (mouse) {
-        if (mouse.button === WHEEL_UP) move(-1);
-        else if (mouse.button === WHEEL_DOWN) move(1);
-        return;
-      }
+      if (groupMode || !isActive) return;
       if (key.meta) return;
 
       if (filtering) {

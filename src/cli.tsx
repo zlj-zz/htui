@@ -32,6 +32,7 @@ import { openEditor } from './editor';
 import { copyToTerminal, toCurl } from './share';
 import { importCommand, listCommand, parseFlags, printHelp, printVersion, removeCommand, sendCommand } from './commands';
 import { chordOf, hintLines, resolveKey, STEPS, type Action, type Step } from './keys';
+import { onMouse, setMouse, WHEEL_DOWN, WHEEL_UP, type MouseEvent } from './mouse';
 import { NewRequestForm } from './ui/NewRequestForm';
 import { Hints } from './ui/Hints';
 import { SearchableList } from './ui/SearchableList';
@@ -568,10 +569,21 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
     }
   }
 
+  // While the editor owns the terminal, mouse reporting must be off — a
+  // foregrounded vim would receive the SGR bytes as garbage keystrokes.
+  async function withEditorTerminal(fn: () => Promise<void>) {
+    setMouse(false);
+    try {
+      await suspendTerminal(fn);
+    } finally {
+      if (showSplit) setMouse(true);
+    }
+  }
+
   async function edit(filePath: string, line: number) {
     try {
       // Hand the terminal to the editor, then repaint the TUI.
-      await suspendTerminal(() => openEditor(filePath, line));
+      await withEditorTerminal(() => openEditor(filePath, line));
     } catch (err: unknown) {
       fail(err instanceof Error ? err.message : String(err));
       return;
@@ -582,7 +594,7 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
 
   async function editEnv(envPath: string) {
     try {
-      await suspendTerminal(() => openEditor(envPath, 1));
+      await withEditorTerminal(() => openEditor(envPath, 1));
     } catch (err: unknown) {
       fail(err instanceof Error ? err.message : String(err));
       return;
@@ -1061,6 +1073,32 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
     else if (up) setDetailScroll((n) => Math.max(0, n - up));
   });
 
+  // Dual-pane mouse: the left pane's list handles its own column (click select,
+  // double-click open, wheel); the right pane is handled here — wheel scrolls
+  // the body, a click focuses the pane. Reporting stays on for the whole
+  // layout while it is up; narrow lists toggle it themselves.
+  useEffect(() => {
+    if (!showSplit) return;
+    setMouse(true);
+    return () => setMouse(false);
+  }, [showSplit]);
+
+  const mouseRef = useRef<(event: MouseEvent) => void>(() => {});
+  mouseRef.current = (event) => {
+    if (!showSplit) return;
+    if (event.x <= leftWidth) {
+      // The list selects the row; the layout follows the pointer with focus.
+      if (event.button === 0 && !event.release) setFocus('list');
+      return;
+    }
+    if (event.button === WHEEL_UP || event.button === WHEEL_DOWN) {
+      setDetailScroll((n) => Math.max(0, n + (event.button === WHEEL_UP ? -1 : 1)));
+    } else if (event.button === 0 && !event.release) {
+      setFocus('detail');
+    }
+  };
+  useEffect(() => onMouse((event) => mouseRef.current(event)), []);
+
   function cancelSend() {
     abortRef.current?.abort();
   }
@@ -1074,6 +1112,7 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
         isActive={chrome || focus === 'list'}
         showFooter={chrome}
         maxVisible={chrome ? undefined : Math.max(3, paneHeight - 5)}
+        mousePane={chrome ? undefined : { x0: 1, x1: leftWidth, y0: 5 }}
         anchorKey={picked ? `${picked.req.method} ${picked.req.url} ${picked.req.name}` : undefined}
         onHighlight={(r) => setHighlighted(r ?? null)}
         placeholder="filter requests…"
