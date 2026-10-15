@@ -5,13 +5,46 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.0] — 2026-10-14
 
-### Changed
+### Added
 
+- **Dual-pane layout** on wide terminals (>= 100 columns): the request list on
+  the left, a detail pane on the right that always shows something — a
+  read-only preview of the highlighted request, the send progress, or the
+  response. `Tab` moves the keyboard between panes and the focused pane's
+  border turns cyan; the right pane's first row names what it is showing
+  (`REQUEST · read-only`, `REQUEST · ready to send`, `SENDING …`,
+  `RESPONSE 200 OK · 15.20ms · api.http`).
+- **Scroll the response body** (`j`/`k`, arrow keys, or the mouse wheel): the
+  position marker reports `rows 11-29 of 754`, and the last line of any
+  response is reachable — the old 200-line body clip is gone.
+- **Mouse support in the dual pane**: click focuses a pane, click selects a
+  list row, double-click opens it, and the wheel scrolls either pane. With
+  reporting on, drag-select needs Shift (Option in Terminal.app).
+- **JSON syntax highlighting** for response bodies, per-request timing
+  sparklines in the list, and durations fixed to two decimals.
 - Import: OpenAPI/Swagger operation tags are written into each region as
   `# @group` and the request list prefers them over URL-derived grouping
   (specs without tags keep URL-derived groups).
+
+### Changed
+
+- Footer colors carry the action hierarchy: the screen's primary action
+  (`Enter`) renders bold, screen verbs have cyan keys, ever-present globals
+  are dim; the status line segments screen, focus, request, and the response
+  status in its status color.
+- Transient feedback (copied, saved, cancelled) sits flush right on the
+  status line — visible on every layout, including the dual pane.
+
+### Fixed
+
+- Panes no longer leave stale fragments behind when their content grows: a
+  fixed-height pane clips its own content (`flexShrink={0}`) and wraps lines
+  itself by display width (CJK counts as 2), so Ink's row bookkeeping always
+  matches the screen.
+
+## [0.3.0] — 2026-10-13
 
 ## [0.3.0] — 2026-10-13
 
