@@ -191,7 +191,7 @@ export function RequestPreview({
   const { start, end } = viewport(lines.length, cursor, size);
   return (
     <Box flexDirection="column">
-      <Text bold>Request{edited ? ' · edited (Ctrl-S saves)' : ''}</Text>
+      <Text bold>REQUEST · ready to send{edited ? ' · edited (Ctrl-S saves)' : ''}</Text>
       {lines.slice(start, end).map((line, k) => {
         const i = start + k;
         const fromEnv = i > model.headers.length && i <= headerCount;

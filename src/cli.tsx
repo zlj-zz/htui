@@ -1040,7 +1040,7 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
         step="request"
         isActive={chrome || focus === 'list'}
         showFooter={chrome}
-        maxVisible={chrome ? undefined : Math.max(3, paneHeight - 4)}
+        maxVisible={chrome ? undefined : Math.max(3, paneHeight - 5)}
         anchorKey={picked ? `${picked.req.method} ${picked.req.url} ${picked.req.name}` : undefined}
         onHighlight={(r) => setHighlighted(r ?? null)}
         placeholder="filter requests…"
@@ -1095,7 +1095,7 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
   function sendingPane(chrome: boolean) {
     return (
       <Box flexDirection="column">
-        <Spinner label={`Sending ${picked?.req.method} ${picked?.req.url} …`} />
+        <Spinner label={`SENDING ${picked?.req.method} ${picked?.req.url}`} />
         {chrome ? <Hints step="sending" /> : null}
       </Box>
     );
@@ -1105,9 +1105,8 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
   function livePane() {
     if (!highlightedModel) {
       return (
-        <Box flexDirection="column" paddingY={1}>
-          <Text dimColor>REQUEST</Text>
-          <Text> </Text>
+        <Box flexDirection="column">
+          <Text dimColor>REQUEST · read-only</Text>
           <Text dimColor>Select a request to see it here</Text>
         </Box>
       );
@@ -1117,7 +1116,7 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
     const shown = lines.slice(0, room);
     return (
       <Box flexDirection="column">
-        <Text dimColor>REQUEST</Text>
+        <Text dimColor>REQUEST · read-only</Text>
         {shown.map((line, i) => (
           <Text key={i} wrap="truncate-end" dimColor={i > 0}>
             {line || ' '}
@@ -1353,15 +1352,23 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
 
     return (
       <Box flexDirection="column">
+        {/* Title row: the pane's state, always first — focus lives on the border,
+            so this line only has to answer "what am I looking at". */}
         <Text color={completed ? statusColor(response?.statusCode) : 'red'}>
           {truncateToWidth(
-            `${picked?.req.method} ${picked?.req.url} → ${
-              completed ? `${response?.statusCode} ${response?.statusMessage ?? ''}` : 'failed'
-            }${result?.duration != null ? `  ${formatMs(result.duration)}` : ''}`,
+            completed
+              ? `RESPONSE ${response?.statusCode} ${response?.statusMessage ?? ''}${
+                  result?.duration != null ? ` · ${formatMs(result.duration)}` : ''
+                }${picked ? ` · ${relOf(picked.file)}` : ''}`
+              : `RESPONSE · failed${result?.duration != null ? ` · ${formatMs(result.duration)}` : ''}${
+                  picked ? ` · ${relOf(picked.file)}` : ''
+                }`,
             detailWidth,
           )}
         </Text>
-        {picked ? <Text dimColor>{truncateToWidth(relOf(picked.file), detailWidth)}</Text> : null}
+        {picked ? (
+          <Text dimColor>{truncateToWidth(`${picked.req.method} ${picked.req.url}`, detailWidth)}</Text>
+        ) : null}
 
         {completed ? (
           <>
@@ -1456,7 +1463,7 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
                   width={leftWidth}
                   height={paneHeight}
                   borderStyle="round"
-                  borderColor="gray"
+                  borderColor={focus === 'list' ? 'cyan' : 'gray'}
                   overflow="hidden"
                   flexDirection="column"
                 >
@@ -1464,6 +1471,7 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
                       by default, and rounded fractional heights leave only every
                       second or third row — Ink then keeps the stale prefix. */}
                   <Box flexDirection="column" flexShrink={0}>
+                    <Text dimColor>REQUESTS{requests ? ` · ${requests.length}` : ''}</Text>
                     {requestPane(false)}
                   </Box>
                 </Box>
@@ -1471,7 +1479,7 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
                   width={rightWidth}
                   height={paneHeight}
                   borderStyle="round"
-                  borderColor="gray"
+                  borderColor={focus === 'detail' ? 'cyan' : 'gray'}
                   overflow="hidden"
                   flexDirection="column"
                 >
