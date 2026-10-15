@@ -38,7 +38,7 @@ import { Hints } from './ui/Hints';
 import { SearchableList } from './ui/SearchableList';
 import { EnvForm } from './ui/EnvForm';
 import { ImportForm } from './ui/ImportForm';
-import { bodyWindow, clipBody, floatToTop, formatMs, jsonSpans, sparkline, truncateToWidth, urlGroup, wrapToWidth } from './rows';
+import { bodyWindow, floatToTop, formatMs, jsonSpans, sparkline, truncateToWidth, urlGroup, wrapToWidth } from './rows';
 import { Banner } from './ui/Banner';
 import { Help } from './ui/Help';
 import { HeaderForm } from './ui/HeaderForm';
@@ -337,7 +337,7 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
     const query = bodyQuery.trim().toLowerCase();
     return query ? bodyLines.filter((line) => line.toLowerCase().includes(query)) : bodyLines;
   }, [bodyLines, bodyQuery]);
-  const bodyView = useMemo(() => clipBody(bodyMatches.join('\n')), [bodyMatches]);
+  const bodyView = useMemo(() => bodyMatches.join('\n'), [bodyMatches]);
   const bodyIsJson = useMemo(() => {
     const body = result?.response?.body;
     if (body == null) return false;
@@ -352,7 +352,7 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
 
 
   const headersView = useMemo(
-    () => (result?.response?.headers ? clipBody(JSON.stringify(result.response.headers, null, 2)) : ''),
+    () => (result?.response?.headers ? JSON.stringify(result.response.headers, null, 2) : ''),
     [result],
   );
   const [history, setHistory] = useState<HistoryEntry[]>([]);
@@ -1406,7 +1406,6 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
     // Wrap ourselves: a line the terminal wraps is a row Ink never counted, and
     // every row below it then lands at the wrong offset.
     const wrap = (text: string) => text.split('\n').flatMap((line) => wrapToWidth(line, detailWidth));
-    const bodyRows = wrap(bodyView);
     // Everything drawn before the body: status, file, headers, the blank line,
     // and the body-search prompt while it is open.
     const headerRows = response?.headers && showHeaders ? wrap(headersView) : [];
@@ -1416,7 +1415,7 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
     const bodyShown = bodyRows.slice(win.offset, win.offset + win.count);
     // The failed path is clipped too — stderr can be long.
     const failRoom = Math.max(1, detailBudget - headRows + (bodySearching ? 1 : 0));
-    const stderrRows = result?.stderr ? wrap(clipBody(result.stderr)) : [];
+    const stderrRows = result?.stderr ? wrap(result.stderr) : [];
     const stderrShown = stderrRows.slice(0, tests.length ? Math.max(1, failRoom - tests.length) : failRoom);
     const testsShown = tests.slice(0, Math.max(1, failRoom - stderrShown.length));
     const failHidden = stderrRows.length - stderrShown.length + tests.length - testsShown.length;
@@ -1520,6 +1519,11 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
   const rightWidth = Math.max(24, columns - leftWidth);
   // Inner width of whatever pane shows the detail (borders take 2 columns).
   const detailWidth = Math.max(20, (showSplit ? rightWidth : columns) - 2);
+  // The body wrapped once per body/width — scrolling re-slices, not re-wraps.
+  const bodyRows = useMemo(
+    () => bodyView.split('\n').flatMap((line) => wrapToWidth(line, detailWidth)),
+    [bodyView, detailWidth],
+  );
 
   return (
     <Box flexDirection="column">

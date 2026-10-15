@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { bodyWindow, buildEntries, clipBody, filterAndRank, floatToTop, formatMs, jsonSpans, scoreMatch, sparkline, truncateToWidth, urlGroup, viewport, wrapToWidth } from './rows';
+import { bodyWindow, buildEntries, filterAndRank, floatToTop, formatMs, jsonSpans, scoreMatch, sparkline, truncateToWidth, urlGroup, viewport, wrapToWidth } from './rows';
 
 // urlGroup: scheme/host stripped, version segments skipped, domain extracted
 assert.equal(urlGroup('https://api.example.com/v1/orders/123?id=7'), 'orders');
@@ -88,13 +88,8 @@ assert.deepEqual(viewport(10, 0, 4), { start: 0, end: 4 });
 assert.deepEqual(viewport(10, 5, 4), { start: 3, end: 7 });
 assert.deepEqual(viewport(10, 9, 4), { start: 6, end: 10 });
 
-// clipBody caps the render and reports the remainder
-assert.equal(clipBody('a\nb\nc'), 'a\nb\nc');
-const big = Array.from({ length: 250 }, (_, i) => `line${i}`).join('\n');
-const clippedLines = clipBody(big).split('\n');
-assert.equal(clippedLines.length, 201); // 200 kept + one summary line
-assert.equal(clippedLines[0], 'line0');
-assert.match(clippedLines[200], /\(\+50 more lines\)/);
+// bodyWindow replaced the old 200-line clip: the whole body stays reachable
+assert.deepEqual(bodyWindow(576, 18, 574), { offset: 559, count: 17, scrollable: true, maxScroll: 559 });
 
 // floatToTop: ranked items float up in rank order; unranked keep their order
 assert.deepEqual(

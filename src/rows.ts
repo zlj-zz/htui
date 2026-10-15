@@ -100,9 +100,6 @@ export function floatToTop<T>(items: T[], rank: (t: T) => number): T[] {
   return [...items].sort((a, b) => rank(a) - rank(b));
 }
 
-/** Cap what we render — an unbounded body is the biggest screen-flood source. */
-export const MAX_BODY_LINES = 200;
-
 /**
  * Hard-wrap one line to `width` display columns (CJK counts as 2).
  *
@@ -153,12 +150,6 @@ export function bodyWindow(
   const maxScroll = Math.max(0, total - fit);
   const offset = Math.max(0, Math.min(scroll, maxScroll));
   return { offset, count: Math.max(0, Math.min(fit, total - offset)), scrollable, maxScroll };
-}
-
-export function clipBody(text: string): string {
-  const lines = text.split('\n');
-  if (lines.length <= MAX_BODY_LINES) return text;
-  return `${lines.slice(0, MAX_BODY_LINES).join('\n')}\n… (+${lines.length - MAX_BODY_LINES} more lines)`;
 }
 
 // --- response presentation (tier-3): timing trend + JSON coloring ---
