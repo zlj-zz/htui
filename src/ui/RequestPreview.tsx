@@ -3,7 +3,6 @@ import { Box, Text, useInput } from 'ink';
 import { useEffect, useRef, useState } from 'react';
 import { HEADER_RE } from '../httpfile';
 import { chordOf, resolveKey, type Action } from '../keys';
-import type { Notice } from '../notice';
 import { REQUEST_LINE_RE, type RequestModel } from '../request';
 import { viewport } from '../rows';
 import { Hints } from './Hints';
@@ -42,7 +41,6 @@ export function RequestPreview({
   envHeaders,
   edited,
   error,
-  notice,
   isActive = true,
   showHints = true,
   onEditing,
@@ -56,7 +54,6 @@ export function RequestPreview({
   edited: boolean;
   error: string;
   /** Transient feedback (copy/save confirmations) — rendered above the hints. */
-  notice?: Notice | null;
   /** In dual-pane mode: keys land here only when this pane has focus. */
   isActive?: boolean;
   /** Hide the footer hints — the split view renders them globally. */
@@ -210,7 +207,6 @@ export function RequestPreview({
       {start > 0 ? <Text dimColor>↑ {start} more</Text> : null}
       {end < lines.length ? <Text dimColor>↓ {lines.length - end} more</Text> : null}
       {error ? <Text color="red">✗ {error}</Text> : null}
-      <Text color={notice?.kind === 'warn' ? 'yellow' : 'cyan'}>{notice?.text ?? ' '}</Text>
       {showHints ? <Hints step="preview" /> : null}
     </Box>
   );

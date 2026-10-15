@@ -200,20 +200,29 @@ function StatusBar({
   picked,
   result,
   focus,
+  notice,
   columns,
 }: {
   step: Step;
   picked: Picked | null;
   result: HttpyacRequestResult | null;
   focus?: 'list' | 'detail';
+  notice?: Notice | null;
   columns: number;
 }) {
   const timing = result?.duration != null ? formatMs(result.duration) : null;
+  // The transient notice is flush right on this line: feedback without a new
+  // row (a row appearing and disappearing is what made frames drift). Notice
+  // copy is ASCII, so .length is the display width.
+  const badge = notice ? `${notice.kind === 'warn' ? '▲' : '●'} ${notice.text}` : '';
+  const shown = badge.length > columns - 24 ? truncateToWidth(badge, columns - 24) : badge;
   return (
     <Box flexDirection="column">
       <Text dimColor>{'─'.repeat(Math.max(8, columns))}</Text>
-      <Text wrap="truncate-end">
-        <Text bold>{SCREEN_LABEL[step] ?? step}</Text>
+      <Box>
+        <Box width={columns - shown.length}>
+          <Text wrap="truncate-end">
+            <Text bold>{SCREEN_LABEL[step] ?? step}</Text>
         {focus ? (
           <>
             <Text dimColor> · </Text>
@@ -241,7 +250,10 @@ function StatusBar({
             )}
           </>
         ) : null}
-      </Text>
+          </Text>
+        </Box>
+        {shown ? <Text color={notice?.kind === 'warn' ? 'yellow' : 'cyan'}>{shown}</Text> : null}
+      </Box>
     </Box>
   );
 }
@@ -1092,7 +1104,6 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
         envHeaders={preview.envHeaders}
         edited={preview.edited}
         error={preview.error}
-        notice={chrome ? notice : null}
         isActive={chrome || focus === 'detail'}
         showHints={chrome}
         onEditing={setPreviewEditing}
@@ -1446,7 +1457,6 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
           </Box>
         ) : null}
 
-        <Text color={notice?.kind === 'warn' ? 'yellow' : 'cyan'}>{chrome ? notice?.text ?? ' ' : ' '}</Text>
         <Box marginTop={1} flexDirection="column">
           {chrome ? <Hints step="result" /> : null}
         </Box>
@@ -1517,7 +1527,7 @@ export function App({ initialFile, initialNew, into }: { initialFile?: string; i
           ) : (
             <Box flexDirection="column" flexShrink={0}>{screen()}</Box>
           )}
-          <StatusBar step={step} picked={picked} result={result} focus={showSplit ? focus : undefined} columns={columns} />
+          <StatusBar step={step} picked={picked} result={result} focus={showSplit ? focus : undefined} notice={notice} columns={columns} />
         </>
       ) : (
         <>{screen()}</>
