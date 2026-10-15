@@ -216,12 +216,12 @@ export const ACTION_LABEL: Record<Action, string> = {
 };
 
 /** A screen's own keys: its `Enter` action plus its per-screen verbs. */
-export function screenHints(step: Step): Array<{ key: string; label: string }> {
-  const hints: Array<{ key: string; label: string }> = [];
+export function screenHints(step: Step): Array<{ key: string; label: string; kind: 'primary' | 'verb' }> {
+  const hints: Array<{ key: string; label: string; kind: 'primary' | 'verb' }> = [];
   const primary = PRIMARY[step];
-  if (primary) hints.push({ key: 'Enter', label: ACTION_LABEL[primary] });
+  if (primary) hints.push({ key: 'Enter', label: ACTION_LABEL[primary], kind: 'primary' });
   for (const [chord, action] of Object.entries(PER_STEP[step] ?? {})) {
-    hints.push({ key: chordLabel(chord), label: ACTION_LABEL[action] });
+    hints.push({ key: chordLabel(chord), label: ACTION_LABEL[action], kind: 'verb' });
   }
   return hints;
 }
@@ -231,33 +231,47 @@ const APP_HINTS: Partial<Record<Step, Array<{ key: string; label: string }>>> = 
   result: [{ key: 'j/k', label: 'scroll' }],
 };
 
+/** A footer hint with its visual weight: primary > screen verbs > globals. */
+export type Hint = { key: string; label: string; kind: 'primary' | 'verb' | 'app' | 'global' };
+
 /** Footer hints for a screen: its own keys plus the ones available everywhere. */
-export function hintsFor(step: Step): Array<{ key: string; label: string }> {
+export function hintsFor(step: Step): Hint[] {
   return [
     ...screenHints(step),
-    ...(APP_HINTS[step] ?? []),
-    ...Object.entries(GLOBAL).map(([chord, action]) => ({ key: chordLabel(chord), label: ACTION_LABEL[action] })),
+    ...(APP_HINTS[step] ?? []).map((h) => ({ ...h, kind: 'app' as const })),
+    ...Object.entries(GLOBAL).map(([chord, action]) => ({
+      key: chordLabel(chord),
+      label: ACTION_LABEL[action],
+      kind: 'global' as const,
+    })),
   ];
 }
 
 /**
  * Pack the hints into lines that fit `width`, never splitting one — a footer
  * that breaks `[i]` away from `import` is unreadable. A hint alone wider than
- * `width` still gets its own line.
+ * `width` still gets its own line. Hints keep their kind so callers can
+ * colorise by weight (see `hintRowsFor` / Hints).
  */
 export function hintLines(step: Step, width: number): string[] {
-  const items = hintsFor(step).map((h) => `[${h.key}] ${h.label}`);
-  const lines: string[] = [];
-  let current = '';
-  for (const item of items) {
-    const candidate = current ? `${current}  ${item}` : item;
-    if (current && candidate.length > width) {
+  return hintRowsFor(step, width).map((line) => line.map((h) => `[${h.key}] ${h.label}`).join('  '));
+}
+
+/** `hintLines` with structure kept: Hints colorises each hint by its kind. */
+export function hintRowsFor(step: Step, width: number): Hint[][] {
+  const text = (h: Hint) => `[${h.key}] ${h.label}`;
+  const lines: Hint[][] = [];
+  let current: Hint[] = [];
+  for (const item of hintsFor(step)) {
+    const joined = current.map(text).join('  ');
+    const candidate = joined ? `${joined}  ${text(item)}` : text(item);
+    if (current.length > 0 && candidate.length > width) {
       lines.push(current);
-      current = item;
+      current = [item];
     } else {
-      current = candidate;
+      current.push(item);
     }
   }
-  if (current) lines.push(current);
+  if (current.length > 0) lines.push(current);
   return lines;
 }

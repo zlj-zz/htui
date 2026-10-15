@@ -208,19 +208,40 @@ function StatusBar({
   focus?: 'list' | 'detail';
   columns: number;
 }) {
-  const parts: string[] = [SCREEN_LABEL[step] ?? step];
-  if (focus) parts.push(`focus ${focus}`);
-  if (picked) {
-    parts.push(picked.req.name !== 'default' ? picked.req.name : `${picked.req.method} ${picked.req.url}`);
-  }
-  if (result) {
-    const timing = result.duration != null ? ` ${formatMs(result.duration)}` : '';
-    parts.push(hasResponse(result.response) ? `${result.response?.statusCode} ${result.response?.statusMessage ?? ''}${timing}`.trim() : `failed${timing}`);
-  }
+  const timing = result?.duration != null ? formatMs(result.duration) : null;
   return (
     <Box flexDirection="column">
       <Text dimColor>{'─'.repeat(Math.max(8, columns))}</Text>
-      <Text dimColor wrap="truncate-end">{parts.join(' · ')}</Text>
+      <Text wrap="truncate-end">
+        <Text bold>{SCREEN_LABEL[step] ?? step}</Text>
+        {focus ? (
+          <>
+            <Text dimColor> · </Text>
+            <Text color="cyan">focus {focus}</Text>
+          </>
+        ) : null}
+        {picked ? (
+          <>
+            <Text dimColor> · </Text>
+            <Text>{picked.req.name !== 'default' ? picked.req.name : `${picked.req.method} ${picked.req.url}`}</Text>
+          </>
+        ) : null}
+        {result ? (
+          <>
+            <Text dimColor> · </Text>
+            {hasResponse(result.response) ? (
+              <>
+                <Text color={statusColor(result.response?.statusCode)}>
+                  {`${result.response?.statusCode} ${result.response?.statusMessage ?? ''}`.trim()}
+                </Text>
+                {timing ? <Text dimColor> {timing}</Text> : null}
+              </>
+            ) : (
+              <Text color="red">failed{timing ? ` ${timing}` : ''}</Text>
+            )}
+          </>
+        ) : null}
+      </Text>
     </Box>
   );
 }
